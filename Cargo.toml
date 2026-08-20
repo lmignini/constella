@@ -1,0 +1,41 @@
+[package]
+name = "constella"
+version = "0.1.0"
+edition = "2024"
+authors = ["Leonardo Mignini <l.mignini@icloud.com>"]
+description = "A no-std bit modulation and demodulation library with const-evaluable constellations"
+license = "MIT OR Apache-2.0"
+readme = "README.md"
+keywords = ["dsp", "modulation", "qam", "qpsk", "no-std"]
+
+
+[features]
+default = []
+std = ["num-complex/std", "num-traits/std", "alloc"]
+alloc = []
+libm = ["dep:libm", "num-traits/libm"]
+
+[dependencies]
+
+# Complex arithmetic without default standard-library features
+num-complex = { version = "0.4.*", default-features = false }
+
+# Generic float/integer traits for constellation coordinates (f32, f64, fixed-point)
+num-traits = { version = "0.2.*", default-features = false }
+
+# Floating-point math support for `no_std` environments
+libm = { version = "0.2.*", optional = true }
+
+
+[dev-dependencies]
+criterion = { version = "0.8.*", features = ["html_reports"] }
+
+[[bench]]
+name = "modulation_throughput"
+harness = false
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+panic = "abort"
