@@ -82,8 +82,10 @@ macro_rules! impl_constellation_float {
                 }
             }
         }
+
         /// Utils
         impl<const M: usize, S: ConstellationState> Constellation<$ty, M, S> {
+            pub const BITS_PER_SYMBOL: usize = M.ilog2() as usize;
             const fn total_energy(points: [Complex<$ty>; M]) -> $ty {
                 let mut i = 0;
 
@@ -110,10 +112,6 @@ macro_rules! impl_constellation_float {
             /// Returns the average energy per symbol ($E_s$).
             pub const fn energy(&self) -> $ty {
                 self.energy
-            }
-
-            pub const fn bits_per_symbol() -> usize {
-                M.ilog2() as usize
             }
 
             const fn from_polar(r: $ty, theta: $ty) -> Complex<$ty> {
@@ -177,7 +175,7 @@ macro_rules! impl_constellation_float {
             pub const fn m_qam() -> Self {
                 assert!(gives_square_constellation(M));
 
-                let k = Self::bits_per_symbol();
+                let k = Self::BITS_PER_SYMBOL;
                 let k_axis = k / 2; // Is an integer since k is even
                 let l = 1 << k_axis;
 
@@ -252,7 +250,7 @@ where
     scale_factor: T,
     // Average energy
     energy: T,
-    _state: core::marker::PhantomData<S>,
+    _state: PhantomData<S>,
 }
 
 /// Allows indexing the constellation directly, without having to call .points() first
@@ -296,7 +294,7 @@ mod tests {
     const EPS_F32: f32 = 1e-6;
     const EPS_F64: f64 = 1e-12;
 
-    fn approx_eq_c32(a: Complex<f32>, b: Complex<f32>) -> bool {
+    pub fn approx_eq_c32(a: Complex<f32>, b: Complex<f32>) -> bool {
         (a.re - b.re).abs() < EPS_F32 && (a.im - b.im).abs() < EPS_F32
     }
 
@@ -308,7 +306,7 @@ mod tests {
     fn test_bpsk_properties() {
         const BPSK: Constellation<f32, 2> = Bpsk::<f32>::bpsk();
 
-        assert_eq!(Constellation::<f32, 2>::bits_per_symbol(), 1);
+        assert_eq!(Constellation::<f32, 2>::BITS_PER_SYMBOL, 1);
         assert!((BPSK.energy() - 1.0).abs() < EPS_F32);
 
         let pts = BPSK.points();
@@ -324,7 +322,7 @@ mod tests {
     fn test_qpsk_properties() {
         const QPSK: Constellation<f64, 4> = Qpsk::<f64>::qpsk();
 
-        assert_eq!(Constellation::<f64, 4>::bits_per_symbol(), 2);
+        assert_eq!(Constellation::<f64, 4>::BITS_PER_SYMBOL, 2);
         assert!((QPSK.energy() - 1.0).abs() < EPS_F64);
 
         let pts = QPSK.points();
@@ -369,7 +367,7 @@ mod tests {
     fn test_psk8_properties() {
         const PSK8: Constellation<f32, 8> = Psk8::<f32>::m_psk();
 
-        assert_eq!(Constellation::<f32, 8>::bits_per_symbol(), 3);
+        assert_eq!(Constellation::<f32, 8>::BITS_PER_SYMBOL, 3);
         assert!((PSK8.energy() - 1.0).abs() < EPS_F32);
 
         let pts = PSK8.points();
@@ -398,11 +396,11 @@ mod tests {
     fn test_qam16_properties() {
         const QAM16: Constellation<f32, 16> = Constellation::<f32, 16>::m_qam();
 
-        assert_eq!(Constellation::<f32, 16>::bits_per_symbol(), 4);
+        assert_eq!(Constellation::<f32, 16>::BITS_PER_SYMBOL, 4);
         assert!((QAM16.energy() - 1.0).abs() < EPS_F32);
 
         // Theoretical unnormalized average energy for 16-QAM is 2*(16-1)/3 = 10
-        let expected_scale = 1.0f32 / (10.0f32).sqrt();
+        let expected_scale = 1.0f32 / 10.0f32.sqrt();
         assert!((QAM16.scale_factor() - expected_scale).abs() < EPS_F32);
 
         let pts = QAM16.points();
@@ -459,7 +457,7 @@ mod tests {
             Constellation::<f32, 4>::from_points(raw_points);
         assert!((unnorm.energy() - 8.0).abs() < EPS_F32);
 
-        let expected_scale = 1.0f32 / (8.0f32).sqrt();
+        let expected_scale = 1.0f32 / 8.0f32.sqrt();
         assert!((unnorm.scale_factor() - expected_scale).abs() < EPS_F32);
         assert_eq!(unnorm[0], raw_points[0]);
 
@@ -515,7 +513,7 @@ mod tests {
         static _QAM4096_STATIC: Constellation<f32, 4096> = Qam4096::<f32>::QAM4096;
 
         assert_eq!(_QAM4096_STATIC.points().len(), 4096);
-        assert_eq!(Constellation::<f32, 4096>::bits_per_symbol(), 12);
+        assert_eq!(Constellation::<f32, 4096>::BITS_PER_SYMBOL, 12);
 
         // Const typestate normalization
         const RAW: Constellation<f64, 2, Unnormalized> =
