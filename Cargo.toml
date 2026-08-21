@@ -26,6 +26,9 @@ num-traits = { version = "0.2.*", default-features = false }
 # Floating-point math support for `no_std` environments
 libm = { version = "0.2.*", optional = true }
 
+# Const square root
+trig-const = { version = "0.4.0", default-features = false }
+
 
 [dev-dependencies]
 criterion = { version = "0.8.*", features = ["html_reports"] }

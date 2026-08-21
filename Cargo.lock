@@ -126,6 +126,7 @@ dependencies = [
  "libm",
  "num-complex",
  "num-traits",
+ "trig-const",
 ]
 
 [[package]]
@@ -528,6 +529,12 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "trig-const"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ffec2fe2ed1e10dac46d8530afb395cae635fa02ef03d7fff1c211e94f9059fc"
 
 [[package]]
 name = "unicode-ident"
