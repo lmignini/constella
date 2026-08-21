@@ -3,6 +3,8 @@ use core::marker::PhantomData;
 
 use num_complex::Complex;
 
+use crate::bits::BitOrder;
+use crate::bits::MsbFirst;
 use trig_const::{cos, sin, sqrt};
 
 pub type Bpsk<T = f32, S = Normalized> = Constellation<T, 2, S>;
@@ -122,6 +124,123 @@ macro_rules! impl_constellation_float {
             }
         }
 
+        /// Demodulation
+        impl<const M: usize> Constellation<$ty, M, Normalized> {
+            /// Performs hard-decision demodulation on a single received complex sample.
+            ///
+            /// Determines the closest constellation point to `point` by finding the symbol index $i$
+            /// that minimizes the squared Euclidean distance:
+            ///
+            /// $$\hat{i} = \arg\min_{i \in [0, M-1]} |r - s_i|^2$$
+            ///
+            /// Uses squared Euclidean distance to avoid square root computations and [`total_cmp`](core::primitive::f32::total_cmp)
+            /// to provide deterministic comparisons across floating-point values.
+            ///
+            /// # Complexity
+            ///
+            /// $\mathcal{O}(M)$ nearest-neighbor search, where $M$ is the constellation size.
+            ///
+            /// # Arguments
+            ///
+            /// * `point` - The received complex baseband sample.
+            ///
+            /// # Returns
+            ///
+            /// The `usize` index of the closest constellation symbol ($0 \le \text{index} < M$).
+            ///
+            /// # Panics
+            ///
+            /// Panics if the constellation contains zero points (cannot occur for valid constellations where $M \ge 2$).
+            ///
+            /// # Examples
+            ///
+            /// ```rust
+            /// use num_complex::Complex;
+            /// use constella::constellation::Bpsk;
+            ///
+            /// let bpsk = Bpsk::<f32>::BPSK;
+            ///
+            /// // Point near (+1.0, 0.0) slices to symbol 0
+            /// assert_eq!(bpsk.demodulate_hard_point(Complex::new(0.85, 0.05)), 0);
+            ///
+            /// // Point near (-1.0, 0.0) slices to symbol 1
+            /// assert_eq!(bpsk.demodulate_hard_point(Complex::new(-1.20, -0.10)), 1);
+            /// ```
+            #[inline]
+            pub fn demodulate_hard_point(&self, point: Complex<$ty>) -> usize {
+                self.points
+                    .iter()
+                    .map(|constellation_point| (constellation_point - point).norm_sqr())
+                    .enumerate()
+                    .min_by(|(_, a), (_, b)| a.total_cmp(b))
+                    .map(|(index, _)| index)
+                    .expect("Constellation cannot be empty")
+            }
+
+            /// Computes soft Log-Likelihood Ratios (LLRs) for all $K$ bits of a received complex point.
+            ///
+            /// Uses the Max-Log approximation.
+            ///
+            /// # Parameters
+            /// * `point`: The received complex sample.
+            /// * `noise_var`: Channel noise variance $\sigma^2$. Pass `0.5` for unscaled Euclidean metric differences.
+            #[inline]
+            pub fn demodulate_soft_point<const K: usize, O: BitOrder + 'static>(
+                &self,
+                point: Complex<$ty>,
+                noise_var: $ty,
+            ) -> [$ty; K] {
+                assert_eq!(1 << K, M, "K must satisfy 2^K == M");
+                // 1. Calculate squared distances to all M constellation points once
+                let mut dists = [0.0 as $ty; M];
+                let mut i = 0;
+                while i < M {
+                    let diff = self.points[i] - point;
+                    dists[i] = diff.re * diff.re + diff.im * diff.im;
+                    i += 1;
+                }
+
+                let mut llrs = [0.0 as $ty; K];
+                let scale = (1.0 as $ty) / (2.0 * noise_var);
+
+                // 2. Compute LLR for each bit position
+                let mut j = 0;
+                while j < K {
+                    let mut min_d0 = <$ty>::INFINITY;
+                    let mut min_d1 = <$ty>::INFINITY;
+
+                    let mut idx = 0;
+                    while idx < M {
+                        let d = dists[idx];
+
+                        // Determine whether the j-th bit of symbol `idx` is 0 or 1
+                        let bit = if core::any::TypeId::of::<O>()
+                            == core::any::TypeId::of::<MsbFirst>()
+                        {
+                            (idx >> (K - 1 - j)) & 1
+                        } else {
+                            (idx >> j) & 1
+                        };
+
+                        if bit == 0 {
+                            if d < min_d0 {
+                                min_d0 = d;
+                            }
+                        } else {
+                            if d < min_d1 {
+                                min_d1 = d;
+                            }
+                        }
+                        idx += 1;
+                    }
+
+                    llrs[j] = (min_d1 - min_d0) * scale;
+                    j += 1;
+                }
+
+                llrs
+            }
+        }
         /// M-PSK
         impl<const M: usize> Constellation<$ty, M, Normalized> {
             /// Generates an $M$-PSK constellation with Gray coding.

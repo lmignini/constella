@@ -339,7 +339,7 @@ pub trait PackBitsExt: Iterator<Item = usize> + Sized {
     }
 }
 
-// Blanket implementation for all symbol index iterators
+// Blanket implementation for all byte iterators
 impl<I: Iterator<Item = u8>> ChunkBitsExt for I {}
 
 #[cfg(test)]
