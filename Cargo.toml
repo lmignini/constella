@@ -5,7 +5,7 @@ edition = "2024"
 authors = ["Leonardo Mignini <l.mignini@icloud.com>"]
 description = "A no-std bit modulation and demodulation library with const-evaluable constellations"
 license = "MIT OR Apache-2.0"
-readme = "README.md"
+readme = "README.MD"
 keywords = ["dsp", "modulation", "qam", "qpsk", "no-std"]
 
 
@@ -34,7 +34,7 @@ trig-const = { version = "0.4.0", default-features = false }
 criterion = { version = "0.8.*", features = ["html_reports"] }
 
 [[bench]]
-name = "modulation_throughput"
+name = "modem_throughput"
 harness = false
 
 [profile.release]
