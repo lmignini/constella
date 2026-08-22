@@ -1,5 +1,6 @@
 #![no_std]
 #![doc = include_str!("../README.md")]
+#![allow(clippy::unusual_byte_groupings)]
 
 #[cfg(any(feature = "alloc", test))]
 extern crate alloc;
