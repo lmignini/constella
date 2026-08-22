@@ -10,34 +10,29 @@ pub mod demodulation;
 pub mod modulation;
 pub(crate) mod utils;
 
-// Core constellation types and typestate markers
 pub use constellation::{
-    Bpsk, Constellation, ConstellationState, Normalized, Psk8, Qam16, Qam64, Qam256, Qam1024,
-    Qam4096, Qpsk, Unnormalized,
+    Bpsk, Constellation, ConstellationGeometry, ConstellationState, General, Normalized, Psk8,
+    Qam16, Qam64, Qam256, Qam1024, Qam4096, Qpsk, SquareQam, Unnormalized,
 };
 
-// Fluent extension traits
 pub use demodulation::DemodulateExt;
 pub use modulation::ModulateExt;
 
-// Bit manipulation markers & traits
 pub use bits::{
     BitOrder, ChunkBitsExt, DiscardRemainder, ExactOnly, LsbFirst, MsbFirst, PackBitsExt, PadZeros,
     Padding,
 };
 
-// Modulation & demodulation traits
 pub use demodulation::{Demodulatable, SoftDemodulatable};
 pub use modulation::Modulatable;
 
-/// Common traits and types for convenient glob importing (`use constella::prelude::*;`).
 pub mod prelude {
     pub use crate::bits::{
         ChunkBitsExt, DiscardRemainder, ExactOnly, LsbFirst, MsbFirst, PackBitsExt, PadZeros,
     };
     pub use crate::constellation::{
-        Bpsk, Constellation, Normalized, Psk8, Qam16, Qam64, Qam256, Qam1024, Qam4096, Qpsk,
-        Unnormalized,
+        Bpsk, Constellation, General, Normalized, Psk8, Qam16, Qam64, Qam256, Qam1024, Qam4096,
+        Qpsk, SquareQam, Unnormalized,
     };
     pub use crate::demodulation::DemodulateExt;
     pub use crate::modulation::ModulateExt;

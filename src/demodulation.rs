@@ -44,189 +44,169 @@
 //! assert!(bit_llrs[0] > 0.0); // Favors bit 0
 //! assert!(bit_llrs[1] < 0.0); // Favors bit 1
 //! ```
-
 use crate::bits::{BitOrder, BitPacker, MsbFirst};
-use crate::constellation::{Constellation, Normalized};
+use crate::constellation::{Constellation, ConstellationGeometry, General, Normalized, SquareQam};
 use core::marker::PhantomData;
 use num_complex::Complex;
 
-/// Internal trait bridging constellation point distance metrics to scalar float precision.
 pub trait DemodPoint<T> {
-    /// Demodulates a single complex baseband sample to its nearest-neighbor symbol index.
     fn demod_hard(&self, point: Complex<T>) -> usize;
 }
 
-/// Internal trait bridging soft Log-Likelihood Ratio computations to scalar float precision.
 pub trait SoftDemodPoint<T, const K: usize, O: BitOrder> {
-    /// Computes soft Log-Likelihood Ratios for all $K$ bits of a received complex sample.
     fn demod_soft(&self, point: Complex<T>, noise_var: T) -> [T; K];
 }
 
-impl<const M: usize> DemodPoint<f32> for Constellation<f32, M, Normalized> {
-    #[inline]
+impl<const M: usize> DemodPoint<f32> for Constellation<f32, M, Normalized, General> {
+    #[inline(always)]
     fn demod_hard(&self, point: Complex<f32>) -> usize {
         self.demodulate_hard_point(point)
     }
 }
 
-impl<const M: usize> DemodPoint<f64> for Constellation<f64, M, Normalized> {
-    #[inline]
+impl<const M: usize> DemodPoint<f32> for Constellation<f32, M, Normalized, SquareQam> {
+    #[inline(always)]
+    fn demod_hard(&self, point: Complex<f32>) -> usize {
+        self.demodulate_hard_point(point)
+    }
+}
+
+impl<const M: usize> DemodPoint<f64> for Constellation<f64, M, Normalized, General> {
+    #[inline(always)]
     fn demod_hard(&self, point: Complex<f64>) -> usize {
         self.demodulate_hard_point(point)
     }
 }
 
-impl<const M: usize, const K: usize, O: BitOrder + 'static> SoftDemodPoint<f32, K, O>
-    for Constellation<f32, M, Normalized>
+impl<const M: usize> DemodPoint<f64> for Constellation<f64, M, Normalized, SquareQam> {
+    #[inline(always)]
+    fn demod_hard(&self, point: Complex<f64>) -> usize {
+        self.demodulate_hard_point(point)
+    }
+}
+
+impl<const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder + 'static>
+    SoftDemodPoint<f32, K, O> for Constellation<f32, M, Normalized, G>
 {
-    #[inline]
+    #[inline(always)]
     fn demod_soft(&self, point: Complex<f32>, noise_var: f32) -> [f32; K] {
         self.demodulate_soft_point::<K, O>(point, noise_var)
     }
 }
 
-impl<const M: usize, const K: usize, O: BitOrder + 'static> SoftDemodPoint<f64, K, O>
-    for Constellation<f64, M, Normalized>
+impl<const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder + 'static>
+    SoftDemodPoint<f64, K, O> for Constellation<f64, M, Normalized, G>
 {
-    #[inline]
+    #[inline(always)]
     fn demod_soft(&self, point: Complex<f64>, noise_var: f64) -> [f64; K] {
         self.demodulate_soft_point::<K, O>(point, noise_var)
     }
 }
 
-/// A trait connecting a normalized constellation of size `M` to hard-decision demodulation pipelines.
 pub trait Demodulatable<I, T, O = MsbFirst>
 where
     I: Iterator<Item = Complex<T>>,
     O: BitOrder,
     T: Copy,
 {
-    /// The resulting streaming byte demodulator iterator type.
     type HardByteOutput: Iterator<Item = u8>;
-    /// The resulting streaming symbol index demodulator iterator type.
     type HardSymbolOutput: Iterator<Item = usize>;
 
-    /// Demodulates an iterator of complex baseband symbols into reconstructed bytes using default [`MsbFirst`] ordering.
     fn demodulate_hard(self, iter: I) -> Self::HardByteOutput;
-
-    /// Demodulates an iterator of complex baseband symbols into reconstructed bytes using explicit [`BitOrder`].
     fn demodulate_hard_with(self, iter: I) -> Self::HardByteOutput;
-
-    /// Demodulates an iterator of complex baseband symbols into raw integer symbol indices.
     fn demodulate_hard_symbols(self, iter: I) -> Self::HardSymbolOutput;
 }
 
-/// A trait connecting a normalized constellation of size `M` to soft-decision LLR demodulation pipelines.
 pub trait SoftDemodulatable<I, T, const K: usize, O = MsbFirst>
 where
     I: Iterator<Item = Complex<T>>,
     O: BitOrder + 'static,
     T: Copy + Default,
 {
-    /// The resulting symbol-level LLR array iterator type.
     type SoftSymbolOutput: Iterator<Item = [T; K]>;
-    /// The resulting flattened bit-level scalar LLR iterator type.
     type SoftBitOutput: Iterator<Item = T>;
 
-    /// Demodulates baseband symbols into symbol-level LLR arrays using default [`MsbFirst`] ordering.
     fn demodulate_soft(self, iter: I, noise_var: T) -> Self::SoftSymbolOutput;
-
-    /// Demodulates baseband symbols into symbol-level LLR arrays using explicit [`BitOrder`].
     fn demodulate_soft_with(self, iter: I, noise_var: T) -> Self::SoftSymbolOutput;
-
-    /// Demodulates baseband symbols into a continuous stream of scalar bit LLRs using default [`MsbFirst`] ordering.
     fn demodulate_soft_bits(self, iter: I, noise_var: T) -> Self::SoftBitOutput;
-
-    /// Demodulates baseband symbols into a continuous stream of scalar bit LLRs using explicit [`BitOrder`].
     fn demodulate_soft_bits_with(self, iter: I, noise_var: T) -> Self::SoftBitOutput;
 }
 
 macro_rules! impl_demodulatable_sizes {
     ($( ($m:expr, $k:expr) ),* $(,)?) => {
         $(
-            impl<T: Copy> Constellation<T, $m, Normalized>
+            impl<T: Copy, G: ConstellationGeometry> Constellation<T, $m, Normalized, G>
             where
                 Self: DemodPoint<T>,
             {
-                /// Demodulates an iterator of complex baseband symbols into reconstructed bytes.
-                ///
-                /// Uses default [`MsbFirst`] bit ordering.
                 #[inline]
                 pub fn demodulate_hard<I: Iterator<Item = Complex<T>>>(
                     self,
                     iter: I,
-                ) -> HardByteDemodIter<I, T, $m, $k, MsbFirst> {
+                ) -> HardByteDemodIter<I, T, $m, $k, G, MsbFirst> {
                     HardByteDemodIter::new(iter, self)
                 }
 
-                /// Demodulates an iterator of complex baseband symbols into reconstructed bytes using explicit [`BitOrder`].
                 #[inline]
                 pub fn demodulate_hard_with<I: Iterator<Item = Complex<T>>, O: BitOrder>(
                     self,
                     iter: I,
-                ) -> HardByteDemodIter<I, T, $m, $k, O> {
+                ) -> HardByteDemodIter<I, T, $m, $k, G, O> {
                     HardByteDemodIter::with_order(iter, self)
                 }
 
-                /// Demodulates an iterator of complex baseband symbols into integer symbol indices ($0 \le \text{idx} < M$).
                 #[inline]
                 pub fn demodulate_hard_symbols<I: Iterator<Item = Complex<T>>>(
                     self,
                     iter: I,
-                ) -> HardSymbolDemodIter<I, T, $m> {
+                ) -> HardSymbolDemodIter<I, T, $m, G> {
                     HardSymbolDemodIter::new(iter, self)
                 }
             }
 
-            impl<T: Copy + Default> Constellation<T, $m, Normalized> {
-                /// Demodulates an iterator of complex baseband symbols into symbol Log-Likelihood Ratio arrays ($[T; K]$).
-                ///
-                /// Uses default [`MsbFirst`] bit ordering and Max-Log LLR approximation.
+            impl<T: Copy + Default, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
                 #[inline]
                 pub fn demodulate_soft<I: Iterator<Item = Complex<T>>>(
                     self,
                     iter: I,
                     noise_var: T,
-                ) -> SoftSymbolDemodIter<I, T, $m, $k, MsbFirst>
+                ) -> SoftSymbolDemodIter<I, T, $m, $k, G, MsbFirst>
                 where
                     Self: SoftDemodPoint<T, $k, MsbFirst>,
                 {
                     SoftSymbolDemodIter::new(iter, self, noise_var)
                 }
 
-                /// Demodulates an iterator of complex baseband symbols into symbol Log-Likelihood Ratio arrays ($[T; K]$) with explicit [`BitOrder`].
                 #[inline]
                 pub fn demodulate_soft_with<I: Iterator<Item = Complex<T>>, O: BitOrder + 'static>(
                     self,
                     iter: I,
                     noise_var: T,
-                ) -> SoftSymbolDemodIter<I, T, $m, $k, O>
+                ) -> SoftSymbolDemodIter<I, T, $m, $k, G, O>
                 where
                     Self: SoftDemodPoint<T, $k, O>,
                 {
                     SoftSymbolDemodIter::with_order(iter, self, noise_var)
                 }
 
-                /// Demodulates an iterator of complex baseband symbols into a continuous stream of scalar bit LLRs.
                 #[inline]
                 pub fn demodulate_soft_bits<I: Iterator<Item = Complex<T>>>(
                     self,
                     iter: I,
                     noise_var: T,
-                ) -> SoftBitDemodIter<I, T, $m, $k, MsbFirst>
+                ) -> SoftBitDemodIter<I, T, $m, $k, G, MsbFirst>
                 where
                     Self: SoftDemodPoint<T, $k, MsbFirst>,
                 {
                     SoftBitDemodIter::new(iter, self, noise_var)
                 }
 
-                /// Demodulates an iterator of complex baseband symbols into a continuous stream of scalar bit LLRs with explicit [`BitOrder`].
                 #[inline]
                 pub fn demodulate_soft_bits_with<I: Iterator<Item = Complex<T>>, O: BitOrder + 'static>(
                     self,
                     iter: I,
                     noise_var: T,
-                ) -> SoftBitDemodIter<I, T, $m, $k, O>
+                ) -> SoftBitDemodIter<I, T, $m, $k, G, O>
                 where
                     Self: SoftDemodPoint<T, $k, O>,
                 {
@@ -234,15 +214,16 @@ macro_rules! impl_demodulatable_sizes {
                 }
             }
 
-            impl<I, T, O> Demodulatable<I, T, O> for Constellation<T, $m, Normalized>
+            impl<I, T, G, O> Demodulatable<I, T, O> for Constellation<T, $m, Normalized, G>
             where
                 I: Iterator<Item = Complex<T>>,
+                G: ConstellationGeometry,
                 O: BitOrder,
                 T: Copy,
                 Self: DemodPoint<T>,
             {
-                type HardByteOutput = HardByteDemodIter<I, T, $m, $k, O>;
-                type HardSymbolOutput = HardSymbolDemodIter<I, T, $m>;
+                type HardByteOutput = HardByteDemodIter<I, T, $m, $k, G, O>;
+                type HardSymbolOutput = HardSymbolDemodIter<I, T, $m, G>;
 
                 #[inline]
                 fn demodulate_hard(self, iter: I) -> Self::HardByteOutput {
@@ -260,15 +241,16 @@ macro_rules! impl_demodulatable_sizes {
                 }
             }
 
-            impl<I, T, O> SoftDemodulatable<I, T, $k, O> for Constellation<T, $m, Normalized>
+            impl<I, T, G, O> SoftDemodulatable<I, T, $k, O> for Constellation<T, $m, Normalized, G>
             where
                 I: Iterator<Item = Complex<T>>,
+                G: ConstellationGeometry,
                 O: BitOrder + 'static,
                 T: Copy + Default,
                 Self: SoftDemodPoint<T, $k, O>,
             {
-                type SoftSymbolOutput = SoftSymbolDemodIter<I, T, $m, $k, O>;
-                type SoftBitOutput = SoftBitDemodIter<I, T, $m, $k, O>;
+                type SoftSymbolOutput = SoftSymbolDemodIter<I, T, $m, $k, G, O>;
+                type SoftBitOutput = SoftBitDemodIter<I, T, $m, $k, G, O>;
 
                 #[inline]
                 fn demodulate_soft(self, iter: I, noise_var: T) -> Self::SoftSymbolOutput {
@@ -309,9 +291,7 @@ impl_demodulatable_sizes!(
     (4096, 12),
 );
 
-/// Extension trait providing fluent demodulation syntax directly on complex symbol iterators.
 pub trait DemodulateExt<T: Copy>: Iterator<Item = Complex<T>> + Sized {
-    /// Demodulates the symbol stream into reconstructed data bytes using default [`MsbFirst`].
     #[inline]
     fn demodulate_hard<C>(self, constellation: C) -> C::HardByteOutput
     where
@@ -320,7 +300,6 @@ pub trait DemodulateExt<T: Copy>: Iterator<Item = Complex<T>> + Sized {
         constellation.demodulate_hard(self)
     }
 
-    /// Demodulates the symbol stream into reconstructed data bytes with custom [`BitOrder`].
     #[inline]
     fn demodulate_hard_with<C, O: BitOrder>(self, constellation: C) -> C::HardByteOutput
     where
@@ -329,7 +308,6 @@ pub trait DemodulateExt<T: Copy>: Iterator<Item = Complex<T>> + Sized {
         constellation.demodulate_hard_with(self)
     }
 
-    /// Demodulates the symbol stream into nearest-neighbor integer symbol indices ($0 \le \text{idx} < M$).
     #[inline]
     fn demodulate_hard_symbols<C>(self, constellation: C) -> C::HardSymbolOutput
     where
@@ -338,7 +316,6 @@ pub trait DemodulateExt<T: Copy>: Iterator<Item = Complex<T>> + Sized {
         constellation.demodulate_hard_symbols(self)
     }
 
-    /// Demodulates the symbol stream into arrays of soft Log-Likelihood Ratios ($[T; K]$).
     #[inline]
     fn demodulate_soft<C, const K: usize>(
         self,
@@ -352,7 +329,6 @@ pub trait DemodulateExt<T: Copy>: Iterator<Item = Complex<T>> + Sized {
         constellation.demodulate_soft(self, noise_var)
     }
 
-    /// Demodulates the symbol stream into arrays of soft Log-Likelihood Ratios ($[T; K]$) with custom [`BitOrder`].
     #[inline]
     fn demodulate_soft_with<C, const K: usize, O: BitOrder + 'static>(
         self,
@@ -366,7 +342,6 @@ pub trait DemodulateExt<T: Copy>: Iterator<Item = Complex<T>> + Sized {
         constellation.demodulate_soft_with(self, noise_var)
     }
 
-    /// Demodulates the symbol stream into a continuous scalar stream of bit Log-Likelihood Ratios.
     #[inline]
     fn demodulate_soft_bits<C, const K: usize>(
         self,
@@ -380,7 +355,6 @@ pub trait DemodulateExt<T: Copy>: Iterator<Item = Complex<T>> + Sized {
         constellation.demodulate_soft_bits(self, noise_var)
     }
 
-    /// Demodulates the symbol stream into a continuous scalar stream of bit Log-Likelihood Ratios with custom [`BitOrder`].
     #[inline]
     fn demodulate_soft_bits_with<C, const K: usize, O: BitOrder + 'static>(
         self,
@@ -397,16 +371,17 @@ pub trait DemodulateExt<T: Copy>: Iterator<Item = Complex<T>> + Sized {
 
 impl<T: Copy, I: Iterator<Item = Complex<T>>> DemodulateExt<T> for I {}
 
-/// A zero-allocation streaming iterator that performs hard nearest-neighbor slicing on baseband symbols.
-pub struct HardSymbolDemodIter<I, T, const M: usize> {
+pub struct HardSymbolDemodIter<I, T, const M: usize, G = General>
+where
+    G: ConstellationGeometry,
+{
     iter: I,
-    constellation: Constellation<T, M, Normalized>,
+    constellation: Constellation<T, M, Normalized, G>,
 }
 
-impl<I, T, const M: usize> HardSymbolDemodIter<I, T, M> {
-    /// Creates a new `HardSymbolDemodIter`.
+impl<I, T, const M: usize, G: ConstellationGeometry> HardSymbolDemodIter<I, T, M, G> {
     #[inline]
-    pub fn new(iter: I, constellation: Constellation<T, M, Normalized>) -> Self {
+    pub fn new(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
         Self {
             iter,
             constellation,
@@ -414,48 +389,51 @@ impl<I, T, const M: usize> HardSymbolDemodIter<I, T, M> {
     }
 }
 
-impl<I, T, const M: usize> Iterator for HardSymbolDemodIter<I, T, M>
+impl<I, T, const M: usize, G> Iterator for HardSymbolDemodIter<I, T, M, G>
 where
     I: Iterator<Item = Complex<T>>,
     T: Copy,
-    Constellation<T, M, Normalized>: DemodPoint<T>,
+    G: ConstellationGeometry,
+    Constellation<T, M, Normalized, G>: DemodPoint<T>,
 {
     type Item = usize;
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let point = self.iter.next()?;
         Some(self.constellation.demod_hard(point))
     }
 }
 
-/// A zero-allocation streaming iterator that demodulates baseband complex symbols directly into reconstructed `u8` bytes.
-pub struct HardByteDemodIter<I, T, const M: usize, const K: usize, O = MsbFirst> {
-    packer: BitPacker<HardSymbolDemodIter<I, T, M>, K, O>,
+pub struct HardByteDemodIter<I, T, const M: usize, const K: usize, G = General, O = MsbFirst>
+where
+    G: ConstellationGeometry,
+{
+    packer: BitPacker<HardSymbolDemodIter<I, T, M, G>, K, O>,
 }
 
-impl<I, T, const M: usize, const K: usize> HardByteDemodIter<I, T, M, K, MsbFirst>
+impl<I, T, const M: usize, const K: usize, G: ConstellationGeometry>
+    HardByteDemodIter<I, T, M, K, G, MsbFirst>
 where
     I: Iterator<Item = Complex<T>>,
     T: Copy,
-    Constellation<T, M, Normalized>: DemodPoint<T>,
+    Constellation<T, M, Normalized, G>: DemodPoint<T>,
 {
-    /// Creates a new hard byte demodulation iterator using default [`MsbFirst`] ordering.
     #[inline]
-    pub fn new(iter: I, constellation: Constellation<T, M, Normalized>) -> Self {
+    pub fn new(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
         Self::with_order(iter, constellation)
     }
 }
 
-impl<I, T, const M: usize, const K: usize, O: BitOrder> HardByteDemodIter<I, T, M, K, O>
+impl<I, T, const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder>
+    HardByteDemodIter<I, T, M, K, G, O>
 where
     I: Iterator<Item = Complex<T>>,
     T: Copy,
-    Constellation<T, M, Normalized>: DemodPoint<T>,
+    Constellation<T, M, Normalized, G>: DemodPoint<T>,
 {
-    /// Creates a new hard byte demodulation iterator using explicit [`BitOrder`].
     #[inline]
-    pub fn with_order(iter: I, constellation: Constellation<T, M, Normalized>) -> Self {
+    pub fn with_order(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
         assert_eq!(
             1 << K,
             M,
@@ -469,51 +447,54 @@ where
     }
 }
 
-impl<I, T, const M: usize, const K: usize, O> Iterator for HardByteDemodIter<I, T, M, K, O>
+impl<I, T, const M: usize, const K: usize, G, O> Iterator for HardByteDemodIter<I, T, M, K, G, O>
 where
     I: Iterator<Item = Complex<T>>,
     T: Copy,
+    G: ConstellationGeometry,
     O: BitOrder,
-    Constellation<T, M, Normalized>: DemodPoint<T>,
+    Constellation<T, M, Normalized, G>: DemodPoint<T>,
 {
     type Item = u8;
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.packer.next()
     }
 }
 
-/// A zero-allocation streaming iterator that outputs arrays of $K$ bit LLRs for each received baseband symbol.
-pub struct SoftSymbolDemodIter<I, T, const M: usize, const K: usize, O = MsbFirst> {
+pub struct SoftSymbolDemodIter<I, T, const M: usize, const K: usize, G = General, O = MsbFirst>
+where
+    G: ConstellationGeometry,
+{
     iter: I,
-    constellation: Constellation<T, M, Normalized>,
+    constellation: Constellation<T, M, Normalized, G>,
     noise_var: T,
     _marker: PhantomData<O>,
 }
 
-impl<I, T, const M: usize, const K: usize> SoftSymbolDemodIter<I, T, M, K, MsbFirst>
+impl<I, T, const M: usize, const K: usize, G: ConstellationGeometry>
+    SoftSymbolDemodIter<I, T, M, K, G, MsbFirst>
 where
     I: Iterator<Item = Complex<T>>,
     T: Copy,
 {
-    /// Creates a new soft symbol demodulation iterator using default [`MsbFirst`] ordering.
     #[inline]
-    pub fn new(iter: I, constellation: Constellation<T, M, Normalized>, noise_var: T) -> Self {
+    pub fn new(iter: I, constellation: Constellation<T, M, Normalized, G>, noise_var: T) -> Self {
         Self::with_order(iter, constellation, noise_var)
     }
 }
 
-impl<I, T, const M: usize, const K: usize, O: BitOrder> SoftSymbolDemodIter<I, T, M, K, O>
+impl<I, T, const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder>
+    SoftSymbolDemodIter<I, T, M, K, G, O>
 where
     I: Iterator<Item = Complex<T>>,
     T: Copy,
 {
-    /// Creates a new soft symbol demodulation iterator using explicit [`BitOrder`].
     #[inline]
     pub fn with_order(
         iter: I,
-        constellation: Constellation<T, M, Normalized>,
+        constellation: Constellation<T, M, Normalized, G>,
         noise_var: T,
     ) -> Self {
         assert_eq!(
@@ -531,51 +512,54 @@ where
     }
 }
 
-impl<I, T, const M: usize, const K: usize, O> Iterator for SoftSymbolDemodIter<I, T, M, K, O>
+impl<I, T, const M: usize, const K: usize, G, O> Iterator for SoftSymbolDemodIter<I, T, M, K, G, O>
 where
     I: Iterator<Item = Complex<T>>,
     T: Copy,
+    G: ConstellationGeometry,
     O: BitOrder + 'static,
-    Constellation<T, M, Normalized>: SoftDemodPoint<T, K, O>,
+    Constellation<T, M, Normalized, G>: SoftDemodPoint<T, K, O>,
 {
     type Item = [T; K];
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let point = self.iter.next()?;
         Some(self.constellation.demod_soft(point, self.noise_var))
     }
 }
 
-/// A zero-allocation streaming iterator that outputs scalar bit LLRs one by one.
-pub struct SoftBitDemodIter<I, T, const M: usize, const K: usize, O = MsbFirst> {
-    symbol_iter: SoftSymbolDemodIter<I, T, M, K, O>,
+pub struct SoftBitDemodIter<I, T, const M: usize, const K: usize, G = General, O = MsbFirst>
+where
+    G: ConstellationGeometry,
+{
+    symbol_iter: SoftSymbolDemodIter<I, T, M, K, G, O>,
     buffer: [T; K],
     index: usize,
 }
 
-impl<I, T, const M: usize, const K: usize> SoftBitDemodIter<I, T, M, K, MsbFirst>
+impl<I, T, const M: usize, const K: usize, G: ConstellationGeometry>
+    SoftBitDemodIter<I, T, M, K, G, MsbFirst>
 where
     I: Iterator<Item = Complex<T>>,
     T: Copy + Default,
 {
-    /// Creates a new scalar soft bit demodulation iterator using default [`MsbFirst`] ordering.
     #[inline]
-    pub fn new(iter: I, constellation: Constellation<T, M, Normalized>, noise_var: T) -> Self {
+    pub fn new(iter: I, constellation: Constellation<T, M, Normalized, G>, noise_var: T) -> Self {
         Self::with_order(iter, constellation, noise_var)
     }
 }
 
-impl<I, T, const M: usize, const K: usize, O: BitOrder> SoftBitDemodIter<I, T, M, K, O>
+impl<I, T, const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder>
+    SoftBitDemodIter<I, T, M, K, G, O>
 where
     I: Iterator<Item = Complex<T>>,
     T: Copy + Default,
 {
-    /// Creates a new scalar soft bit demodulation iterator using explicit [`BitOrder`].
     #[inline]
     pub fn with_order(
         iter: I,
-        constellation: Constellation<T, M, Normalized>,
+        constellation: Constellation<T, M, Normalized, G>,
         noise_var: T,
     ) -> Self {
         Self {
@@ -586,16 +570,17 @@ where
     }
 }
 
-impl<I, T, const M: usize, const K: usize, O> Iterator for SoftBitDemodIter<I, T, M, K, O>
+impl<I, T, const M: usize, const K: usize, G, O> Iterator for SoftBitDemodIter<I, T, M, K, G, O>
 where
     I: Iterator<Item = Complex<T>>,
     T: Copy + Default,
+    G: ConstellationGeometry,
     O: BitOrder + 'static,
-    Constellation<T, M, Normalized>: SoftDemodPoint<T, K, O>,
+    Constellation<T, M, Normalized, G>: SoftDemodPoint<T, K, O>,
 {
     type Item = T;
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         if self.index < K {
             let val = self.buffer[self.index];
@@ -615,6 +600,7 @@ mod tests {
     use crate::bits::{LsbFirst, PadZeros};
     use crate::constellation::{Bpsk, Psk8, Qam16, Qpsk};
     use crate::modulation::ModulateExt;
+    use crate::{Qam64, Qam256, Qam4096};
     use alloc::vec;
     use alloc::vec::Vec;
 
@@ -749,5 +735,46 @@ mod tests {
         let indices: Vec<usize> = points.into_iter().demodulate_hard_symbols(qpsk).collect();
 
         assert_eq!(indices, vec![0, 1, 2, 3]);
+    }
+
+    #[test]
+    fn test_high_order_qam_roundtrips() {
+        let payload: Vec<u8> = (0..120).map(|x| (x * 37) as u8).collect();
+
+        // 64-QAM (K = 6)
+        let qam64 = Qam64::<f32>::QAM64;
+        let syms64: Vec<_> = payload.clone().into_iter().modulate(qam64).collect();
+        let rec64: Vec<u8> = syms64.into_iter().demodulate_hard(qam64).collect();
+        assert_eq!(rec64, payload);
+
+        // 256-QAM (K = 8)
+        let qam256 = Qam256::<f32>::QAM256;
+        let syms256: Vec<_> = payload.clone().into_iter().modulate(qam256).collect();
+        let rec256: Vec<u8> = syms256.into_iter().demodulate_hard(qam256).collect();
+        assert_eq!(rec256, payload);
+
+        // 4096-QAM (K = 12)
+        let qam4096 = Qam4096::<f64>::QAM4096;
+        let syms4096: Vec<_> = payload.clone().into_iter().modulate(qam4096).collect();
+        let rec4096: Vec<u8> = syms4096.into_iter().demodulate_hard(qam4096).collect();
+        assert_eq!(rec4096, payload);
+    }
+
+    #[test]
+    fn test_custom_user_constellation_general_pipeline() {
+        // Custom non-standard 4-point constellation
+        let raw_points = [
+            Complex::new(2.0f32, 1.0f32),
+            Complex::new(-1.0f32, 3.0f32),
+            Complex::new(-2.0f32, -2.0f32),
+            Complex::new(3.0f32, -1.0f32),
+        ];
+        let custom = Constellation::<f32, 4>::from_points(raw_points).normalize();
+
+        let data = vec![0x12, 0x34, 0xAB, 0xCD];
+        let symbols: Vec<Complex<f32>> = data.clone().into_iter().modulate(custom).collect();
+        let recovered: Vec<u8> = symbols.into_iter().demodulate_hard(custom).collect();
+
+        assert_eq!(recovered, data);
     }
 }

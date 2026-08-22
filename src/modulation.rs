@@ -1,35 +1,7 @@
-//! Streaming digital modulation pipelines.
-//!
-//! This module provides zero-allocation iterator adapters that transform arbitrary
-//! byte streams ([`Iterator<Item = u8>`]) into baseband complex symbols ([`Complex<T>`]).
-//!
-//! # Usage Patterns
-//!
-//! ### 1. Stream Extension (Recommended)
-//! ```rust
-//! use constella::modulation::ModulateExt;
-//! use constella::constellation::Qpsk;
-//!
-//! let bytes = [0xAA, 0x55];
-//! let symbols: Vec<_> = bytes.into_iter().modulate(Qpsk::<f32>::QPSK).collect();
-//! ```
-//!
-//! ### 2. Constellation Method
-//! ```rust
-//! use constella::constellation::Qam16;
-//!
-//! let bytes = [0x12, 0x34];
-//! let symbols: Vec<_> = Qam16::<f32>::QAM16.modulate(bytes.into_iter()).collect();
-//! ```
-
 use crate::bits::{BitChunker, BitOrder, MsbFirst, PadZeros, Padding};
-use crate::constellation::{Constellation, Normalized};
+use crate::constellation::{Constellation, ConstellationGeometry, General, Normalized};
 use num_complex::Complex;
 
-/// A trait connecting a normalized constellation of size `M` to its corresponding bit-width `K`.
-///
-/// This abstraction enables static type inference so callers do not need to manually
-/// specify the const parameter `K` ($\log_2 M$) when constructing modulation pipelines.
 pub trait Modulatable<I, T, O = MsbFirst, P = PadZeros>
 where
     I: Iterator<Item = u8>,
@@ -37,49 +9,41 @@ where
     P: Padding,
     T: Copy,
 {
-    /// The resulting streaming modulation iterator type.
     type Output: Iterator<Item = Complex<T>>;
-
-    /// Modulates an iterator of raw bytes using default [`MsbFirst`] ordering and [`PadZeros`] padding.
     fn modulate(self, iter: I) -> Self::Output;
-
-    /// Modulates an iterator of raw bytes using explicit [`BitOrder`] and [`Padding`] strategies.
     fn modulate_with(self, iter: I) -> Self::Output;
 }
 
 macro_rules! impl_modulatable_sizes {
     ($( ($m:expr, $k:expr) ),* $(,)?) => {
         $(
-            impl<T: Copy> Constellation<T, $m, Normalized> {
-                /// Modulates an iterator of raw bytes into complex constellation points.
-                ///
-                /// Uses default [`MsbFirst`] bit ordering and [`PadZeros`] padding.
+            impl<T: Copy, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
                 #[inline]
                 pub fn modulate<I: Iterator<Item = u8>>(
                     self,
                     iter: I,
-                ) -> ModulationIter<I, T, $m, $k, MsbFirst, PadZeros> {
+                ) -> ModulationIter<I, T, $m, $k, G, MsbFirst, PadZeros> {
                     ModulationIter::new(iter, self)
                 }
 
-                /// Modulates an iterator of raw bytes using explicit [`BitOrder`] and [`Padding`] strategies.
                 #[inline]
                 pub fn modulate_with<I: Iterator<Item = u8>, O: BitOrder, P: Padding>(
                     self,
                     iter: I,
-                ) -> ModulationIter<I, T, $m, $k, O, P> {
+                ) -> ModulationIter<I, T, $m, $k, G, O, P> {
                     ModulationIter::with_order_and_padding(iter, self)
                 }
             }
 
-            impl<I, T, O, P> Modulatable<I, T, O, P> for Constellation<T, $m, Normalized>
+            impl<I, T, G, O, P> Modulatable<I, T, O, P> for Constellation<T, $m, Normalized, G>
             where
                 I: Iterator<Item = u8>,
+                G: ConstellationGeometry,
                 O: BitOrder,
                 P: Padding,
                 T: Copy,
             {
-                type Output = ModulationIter<I, T, $m, $k, O, P>;
+                type Output = ModulationIter<I, T, $m, $k, G, O, P>;
 
                 #[inline]
                 fn modulate(self, iter: I) -> Self::Output {
@@ -110,9 +74,7 @@ impl_modulatable_sizes!(
     (4096, 12),
 );
 
-/// Extension trait providing fluent `.modulate(...)` syntax directly on byte iterators.
 pub trait ModulateExt: Iterator<Item = u8> + Sized {
-    /// Modulates the byte stream using the given normalized constellation with default [`MsbFirst`] and [`PadZeros`].
     #[inline]
     fn modulate<C, T>(self, constellation: C) -> C::Output
     where
@@ -122,7 +84,6 @@ pub trait ModulateExt: Iterator<Item = u8> + Sized {
         constellation.modulate(self)
     }
 
-    /// Modulates the byte stream using custom bit order and padding policies.
     #[inline]
     fn modulate_with<C, T, O: BitOrder, P: Padding>(self, constellation: C) -> C::Output
     where
@@ -135,52 +96,44 @@ pub trait ModulateExt: Iterator<Item = u8> + Sized {
 
 impl<I: Iterator<Item = u8>> ModulateExt for I {}
 
-/// A zero-allocation streaming iterator that transforms sliced bits into baseband complex symbols.
-///
-/// `ModulationIter` continuously consumes chunks of $K$ bits from an inner [`BitChunker`]
-/// and maps them to complex points in $O(1)$ time via a static [`Constellation`] lookup table.
-///
-/// # Type Parameters
-///
-/// * `I`: The underlying byte iterator source.
-/// * `T`: Float scalar coordinate type (`f32` or `f64`).
-/// * `M`: Constellation size (number of points, e.g. 2, 4, 16).
-/// * `K`: Bits per constellation symbol ($K = \log_2 M$).
-/// * `O`: Bit endianness strategy ([`MsbFirst`] or [`LsbFirst`]). Defaults to [`MsbFirst`].
-/// * `P`: Trailing bit padding strategy ([`PadZeros`], [`DiscardRemainder`], or [`ExactOnly`]). Defaults to [`PadZeros`].
-pub struct ModulationIter<I, T, const M: usize, const K: usize, O = MsbFirst, P = PadZeros> {
+pub struct ModulationIter<
+    I,
+    T,
+    const M: usize,
+    const K: usize,
+    G = General,
+    O = MsbFirst,
+    P = PadZeros,
+> where
+    G: ConstellationGeometry,
+{
     bit_chunker: BitChunker<I, K, O, P>,
-    constellation: Constellation<T, M, Normalized>,
+    constellation: Constellation<T, M, Normalized, G>,
 }
 
-impl<I, T, const M: usize, const K: usize> ModulationIter<I, T, M, K, MsbFirst, PadZeros>
+impl<I, T, const M: usize, const K: usize, G: ConstellationGeometry>
+    ModulationIter<I, T, M, K, G, MsbFirst, PadZeros>
 where
     I: Iterator<Item = u8>,
     T: Copy,
 {
-    /// Creates a modulation iterator with default [`MsbFirst`] ordering and [`PadZeros`] padding.
-    ///
-    /// # Panics
-    ///
-    /// Panics if $2^K \neq M$.
     #[inline]
-    pub fn new(iter: I, constellation: Constellation<T, M, Normalized>) -> Self {
+    pub fn new(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
         Self::with_order_and_padding(iter, constellation)
     }
 }
 
-impl<I, T, const M: usize, const K: usize, O: BitOrder, P: Padding> ModulationIter<I, T, M, K, O, P>
+impl<I, T, const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder, P: Padding>
+    ModulationIter<I, T, M, K, G, O, P>
 where
     I: Iterator<Item = u8>,
     T: Copy,
 {
-    /// Creates a modulation iterator with custom [`BitOrder`] and [`Padding`] strategies.
-    ///
-    /// # Panics
-    ///
-    /// Panics if $2^K \neq M$.
     #[inline]
-    pub fn with_order_and_padding(iter: I, constellation: Constellation<T, M, Normalized>) -> Self {
+    pub fn with_order_and_padding(
+        iter: I,
+        constellation: Constellation<T, M, Normalized, G>,
+    ) -> Self {
         assert_eq!(
             1 << K,
             M,
@@ -194,9 +147,10 @@ where
     }
 }
 
-impl<I, T, const M: usize, const K: usize, O, P> Iterator for ModulationIter<I, T, M, K, O, P>
+impl<I, T, const M: usize, const K: usize, G, O, P> Iterator for ModulationIter<I, T, M, K, G, O, P>
 where
     I: Iterator<Item = u8>,
+    G: ConstellationGeometry,
     O: BitOrder,
     P: Padding,
     T: Copy,
@@ -286,5 +240,19 @@ mod tests {
         let data: [u8; 0] = [];
         let mut iter = data.into_iter().modulate(Qpsk::<f32>::QPSK);
         assert_eq!(iter.next(), None);
+    }
+
+    #[test]
+    fn test_8psk_non_aligned_stream_discard_padding() {
+        // 2 bytes = 16 bits. For 8-PSK (K = 3): 5 symbols (15 bits) + 1 trailing bit discarded
+        let data = [0b1010_1010, 0b1100_1100];
+        let psk8 = Psk8::<f32>::m_psk();
+
+        let symbols: Vec<_> = data
+            .into_iter()
+            .modulate_with::<_, f32, MsbFirst, DiscardRemainder>(psk8)
+            .collect();
+
+        assert_eq!(symbols.len(), 5);
     }
 }

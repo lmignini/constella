@@ -10,6 +10,7 @@ pub const fn binary_to_gray(val: usize) -> usize {
     val ^ (val >> 1)
 }
 
+#[allow(dead_code)]
 pub const fn gray_to_binary(mut val: usize) -> usize {
     let mut b: usize = 0;
 
