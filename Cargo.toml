@@ -5,7 +5,7 @@ edition = "2024"
 authors = ["Leonardo Mignini <l.mignini@icloud.com>"]
 description = "A no-std bit modulation and demodulation library with const-evaluable constellations"
 license = "MIT OR Apache-2.0"
-readme = "README.MD"
+readme = "README.md"
 keywords = ["dsp", "modulation", "qam", "qpsk", "no-std"]
 
 

@@ -11,6 +11,8 @@ pub mod demodulation;
 pub mod modulation;
 pub(crate) mod utils;
 
+mod channel;
+
 pub use constellation::{
     Bpsk, Constellation, ConstellationGeometry, ConstellationState, General, Normalized, Psk8,
     Qam16, Qam64, Qam256, Qam1024, Qam4096, Qpsk, SquareQam, Unnormalized,
