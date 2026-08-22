@@ -168,7 +168,7 @@ macro_rules! impl_constellation_float {
             }
         }
 
-        // --- Fast-Path O(1) Slicing for Square QAM (Zero Branching) ---
+        // --- Fast-Path O(1) Slicing for Square QAM ---
         impl<const M: usize> Constellation<$ty, M, Normalized, SquareQam<$ty>> {
             #[inline(always)]
             pub fn demodulate_hard_point(&self, point: Complex<$ty>) -> usize {
@@ -192,7 +192,7 @@ macro_rules! impl_constellation_float {
             }
         }
 
-        // --- Linear O(M) Search for Arbitrary Geometry (Zero Branching) ---
+        // --- Linear O(M) Search for Arbitrary Geometry ---
         impl<const M: usize> Constellation<$ty, M, Normalized, General> {
             #[inline(always)]
             pub fn demodulate_hard_point(&self, point: Complex<$ty>) -> usize {

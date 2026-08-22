@@ -44,7 +44,7 @@
 //! assert!(bit_llrs[0] > 0.0); // Favors bit 0
 //! assert!(bit_llrs[1] < 0.0); // Favors bit 1
 //! ```
-use crate::bits::{BitOrder, BitPacker, MsbFirst};
+use crate::bits::{BitOrder, BitPacker, DirectBitCodec, MsbFirst};
 use crate::constellation::{Constellation, ConstellationGeometry, General, Normalized, SquareQam};
 use core::marker::PhantomData;
 use num_complex::Complex;
@@ -131,28 +131,29 @@ where
     fn demodulate_soft_bits(self, iter: I, noise_var: T) -> Self::SoftBitOutput;
     fn demodulate_soft_bits_with(self, iter: I, noise_var: T) -> Self::SoftBitOutput;
 }
-
-macro_rules! impl_demodulatable_sizes {
-    ($( ($m:expr, $k:expr) ),* $(,)?) => {
+macro_rules! impl_direct_demod_sizes {
+    ($( ($m:expr, $k:expr, $n:expr) ),* $(,)?) => {
         $(
+            // --- Inherent Hard Demodulation Methods ---
             impl<T: Copy, G: ConstellationGeometry> Constellation<T, $m, Normalized, G>
             where
                 Self: DemodPoint<T>,
+                MsbFirst: DirectBitCodec<$k, $n>,
             {
                 #[inline]
                 pub fn demodulate_hard<I: Iterator<Item = Complex<T>>>(
                     self,
                     iter: I,
-                ) -> HardByteDemodIter<I, T, $m, $k, G, MsbFirst> {
-                    HardByteDemodIter::new(iter, self)
+                ) -> DirectByteDemodIter<I, T, $m, $k, $n, G, MsbFirst> {
+                    DirectByteDemodIter::new(iter, self)
                 }
 
                 #[inline]
-                pub fn demodulate_hard_with<I: Iterator<Item = Complex<T>>, O: BitOrder>(
+                pub fn demodulate_hard_with<I: Iterator<Item = Complex<T>>, O: BitOrder + DirectBitCodec<$k, $n>>(
                     self,
                     iter: I,
-                ) -> HardByteDemodIter<I, T, $m, $k, G, O> {
-                    HardByteDemodIter::with_order(iter, self)
+                ) -> DirectByteDemodIter<I, T, $m, $k, $n, G, O> {
+                    DirectByteDemodIter::with_order(iter, self)
                 }
 
                 #[inline]
@@ -164,6 +165,7 @@ macro_rules! impl_demodulatable_sizes {
                 }
             }
 
+            // --- Inherent Soft Demodulation Methods ---
             impl<T: Copy + Default, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
                 #[inline]
                 pub fn demodulate_soft<I: Iterator<Item = Complex<T>>>(
@@ -214,25 +216,26 @@ macro_rules! impl_demodulatable_sizes {
                 }
             }
 
+            // --- Demodulatable Trait Implementation (Direct Output) ---
             impl<I, T, G, O> Demodulatable<I, T, O> for Constellation<T, $m, Normalized, G>
             where
                 I: Iterator<Item = Complex<T>>,
                 G: ConstellationGeometry,
-                O: BitOrder,
+                O: BitOrder + DirectBitCodec<$k, $n>,
                 T: Copy,
                 Self: DemodPoint<T>,
             {
-                type HardByteOutput = HardByteDemodIter<I, T, $m, $k, G, O>;
+                type HardByteOutput = DirectByteDemodIter<I, T, $m, $k, $n, G, O>;
                 type HardSymbolOutput = HardSymbolDemodIter<I, T, $m, G>;
 
                 #[inline]
                 fn demodulate_hard(self, iter: I) -> Self::HardByteOutput {
-                    HardByteDemodIter::with_order(iter, self)
+                    DirectByteDemodIter::with_order(iter, self)
                 }
 
                 #[inline]
                 fn demodulate_hard_with(self, iter: I) -> Self::HardByteOutput {
-                    HardByteDemodIter::with_order(iter, self)
+                    DirectByteDemodIter::with_order(iter, self)
                 }
 
                 #[inline]
@@ -241,6 +244,7 @@ macro_rules! impl_demodulatable_sizes {
                 }
             }
 
+            // --- SoftDemodulatable Trait Implementation ---
             impl<I, T, G, O> SoftDemodulatable<I, T, $k, O> for Constellation<T, $m, Normalized, G>
             where
                 I: Iterator<Item = Complex<T>>,
@@ -276,21 +280,173 @@ macro_rules! impl_demodulatable_sizes {
     };
 }
 
-impl_demodulatable_sizes!(
-    (2, 1),
-    (4, 2),
-    (8, 3),
-    (16, 4),
-    (32, 5),
-    (64, 6),
-    (128, 7),
-    (256, 8),
-    (512, 9),
-    (1024, 10),
-    (2048, 11),
-    (4096, 12),
+macro_rules! impl_fallback_demod_sizes {
+    ($( ($m:expr, $k:expr) ),* $(,)?) => {
+        $(
+            // --- Inherent Hard Demodulation Methods ---
+            impl<T: Copy, G: ConstellationGeometry> Constellation<T, $m, Normalized, G>
+            where
+                Self: DemodPoint<T>,
+            {
+                #[inline]
+                pub fn demodulate_hard<I: Iterator<Item = Complex<T>>>(
+                    self,
+                    iter: I,
+                ) -> HardByteDemodIter<I, T, $m, $k, G, MsbFirst> {
+                    HardByteDemodIter::new(iter, self)
+                }
+
+                #[inline]
+                pub fn demodulate_hard_with<I: Iterator<Item = Complex<T>>, O: BitOrder>(
+                    self,
+                    iter: I,
+                ) -> HardByteDemodIter<I, T, $m, $k, G, O> {
+                    HardByteDemodIter::with_order(iter, self)
+                }
+
+                #[inline]
+                pub fn demodulate_hard_symbols<I: Iterator<Item = Complex<T>>>(
+                    self,
+                    iter: I,
+                ) -> HardSymbolDemodIter<I, T, $m, G> {
+                    HardSymbolDemodIter::new(iter, self)
+                }
+            }
+
+            // --- Inherent Soft Demodulation Methods ---
+            impl<T: Copy + Default, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
+                #[inline]
+                pub fn demodulate_soft<I: Iterator<Item = Complex<T>>>(
+                    self,
+                    iter: I,
+                    noise_var: T,
+                ) -> SoftSymbolDemodIter<I, T, $m, $k, G, MsbFirst>
+                where
+                    Self: SoftDemodPoint<T, $k, MsbFirst>,
+                {
+                    SoftSymbolDemodIter::new(iter, self, noise_var)
+                }
+
+                #[inline]
+                pub fn demodulate_soft_with<I: Iterator<Item = Complex<T>>, O: BitOrder + 'static>(
+                    self,
+                    iter: I,
+                    noise_var: T,
+                ) -> SoftSymbolDemodIter<I, T, $m, $k, G, O>
+                where
+                    Self: SoftDemodPoint<T, $k, O>,
+                {
+                    SoftSymbolDemodIter::with_order(iter, self, noise_var)
+                }
+
+                #[inline]
+                pub fn demodulate_soft_bits<I: Iterator<Item = Complex<T>>>(
+                    self,
+                    iter: I,
+                    noise_var: T,
+                ) -> SoftBitDemodIter<I, T, $m, $k, G, MsbFirst>
+                where
+                    Self: SoftDemodPoint<T, $k, MsbFirst>,
+                {
+                    SoftBitDemodIter::new(iter, self, noise_var)
+                }
+
+                #[inline]
+                pub fn demodulate_soft_bits_with<I: Iterator<Item = Complex<T>>, O: BitOrder + 'static>(
+                    self,
+                    iter: I,
+                    noise_var: T,
+                ) -> SoftBitDemodIter<I, T, $m, $k, G, O>
+                where
+                    Self: SoftDemodPoint<T, $k, O>,
+                {
+                    SoftBitDemodIter::with_order(iter, self, noise_var)
+                }
+            }
+
+            // --- Demodulatable Trait Implementation (Fallback Output) ---
+            impl<I, T, G, O> Demodulatable<I, T, O> for Constellation<T, $m, Normalized, G>
+            where
+                I: Iterator<Item = Complex<T>>,
+                G: ConstellationGeometry,
+                O: BitOrder,
+                T: Copy,
+                Self: DemodPoint<T>,
+            {
+                type HardByteOutput = HardByteDemodIter<I, T, $m, $k, G, O>;
+                type HardSymbolOutput = HardSymbolDemodIter<I, T, $m, G>;
+
+                #[inline]
+                fn demodulate_hard(self, iter: I) -> Self::HardByteOutput {
+                    HardByteDemodIter::with_order(iter, self)
+                }
+
+                #[inline]
+                fn demodulate_hard_with(self, iter: I) -> Self::HardByteOutput {
+                    HardByteDemodIter::with_order(iter, self)
+                }
+
+                #[inline]
+                fn demodulate_hard_symbols(self, iter: I) -> Self::HardSymbolOutput {
+                    HardSymbolDemodIter::new(iter, self)
+                }
+            }
+
+            // --- SoftDemodulatable Trait Implementation ---
+            impl<I, T, G, O> SoftDemodulatable<I, T, $k, O> for Constellation<T, $m, Normalized, G>
+            where
+                I: Iterator<Item = Complex<T>>,
+                G: ConstellationGeometry,
+                O: BitOrder + 'static,
+                T: Copy + Default,
+                Self: SoftDemodPoint<T, $k, O>,
+            {
+                type SoftSymbolOutput = SoftSymbolDemodIter<I, T, $m, $k, G, O>;
+                type SoftBitOutput = SoftBitDemodIter<I, T, $m, $k, G, O>;
+
+                #[inline]
+                fn demodulate_soft(self, iter: I, noise_var: T) -> Self::SoftSymbolOutput {
+                    SoftSymbolDemodIter::with_order(iter, self, noise_var)
+                }
+
+                #[inline]
+                fn demodulate_soft_with(self, iter: I, noise_var: T) -> Self::SoftSymbolOutput {
+                    SoftSymbolDemodIter::with_order(iter, self, noise_var)
+                }
+
+                #[inline]
+                fn demodulate_soft_bits(self, iter: I, noise_var: T) -> Self::SoftBitOutput {
+                    SoftBitDemodIter::with_order(iter, self, noise_var)
+                }
+
+                #[inline]
+                fn demodulate_soft_bits_with(self, iter: I, noise_var: T) -> Self::SoftBitOutput {
+                    SoftBitDemodIter::with_order(iter, self, noise_var)
+                }
+            }
+        )*
+    };
+}
+
+// Fast Direct Path (Byte-Aligned: K * N == 8)
+impl_direct_demod_sizes!(
+    (2, 1, 8),   // BPSK
+    (4, 2, 4),   // QPSK
+    (16, 4, 2),  // 16-QAM
+    (256, 8, 1), // 256-QAM
 );
 
+// Fallback Multi-Byte Streaming Path (Unaligned / Spanning)
+impl_fallback_demod_sizes!(
+    (8, 3),     // 8-PSK
+    (32, 5),    // 32-QAM
+    (64, 6),    // 64-QAM
+    (128, 7),   // 128-QAM
+    (512, 9),   // 512-QAM
+    (1024, 10), // 1024-QAM
+    (2048, 11), // 2048-QAM
+    (4096, 12), // 4096-QAM
+);
 pub trait DemodulateExt<T: Copy>: Iterator<Item = Complex<T>> + Sized {
     #[inline]
     fn demodulate_hard<C>(self, constellation: C) -> C::HardByteOutput
@@ -593,7 +749,83 @@ where
         }
     }
 }
+pub struct DirectByteDemodIter<I, T, const M: usize, const K: usize, const N: usize, G, O>
+where
+    I: Iterator<Item = Complex<T>>,
+    G: ConstellationGeometry,
+    T: Copy,
+    O: BitOrder + DirectBitCodec<K, N>,
+    Constellation<T, M, Normalized, G>: DemodPoint<T>,
+{
+    iter: I,
+    constellation: Constellation<T, M, Normalized, G>,
+    _marker: PhantomData<O>,
+}
 
+impl<I, T, const M: usize, const K: usize, const N: usize, G>
+    DirectByteDemodIter<I, T, M, K, N, G, MsbFirst>
+where
+    I: Iterator<Item = Complex<T>>,
+    G: ConstellationGeometry,
+    T: Copy,
+    MsbFirst: DirectBitCodec<K, N>,
+    Constellation<T, M, Normalized, G>: DemodPoint<T>,
+{
+    /// Creates a new direct demodulator with default MSB-first bit ordering.
+    #[inline]
+    pub fn new(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
+        Self::with_order(iter, constellation)
+    }
+}
+
+impl<I, T, const M: usize, const K: usize, const N: usize, G, O>
+    DirectByteDemodIter<I, T, M, K, N, G, O>
+where
+    I: Iterator<Item = Complex<T>>,
+    G: ConstellationGeometry,
+    T: Copy,
+    O: BitOrder + DirectBitCodec<K, N>,
+    Constellation<T, M, Normalized, G>: DemodPoint<T>,
+{
+    /// Creates a new direct demodulator with explicit bit ordering.
+    #[inline]
+    pub fn with_order(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
+        assert_eq!(1 << K, M, "Constellation size M ({M}) must equal 2^K");
+        assert_eq!(K * N, 8, "K * N must equal 8 bits per byte");
+        Self {
+            iter,
+            constellation,
+            _marker: PhantomData,
+        }
+    }
+}
+impl<I, T, const M: usize, const K: usize, const N: usize, G, O> Iterator
+    for DirectByteDemodIter<I, T, M, K, N, G, O>
+where
+    I: Iterator<Item = Complex<T>>,
+    G: ConstellationGeometry,
+    T: Copy,
+    O: BitOrder + DirectBitCodec<K, N>,
+    Constellation<T, M, Normalized, G>: DemodPoint<T>,
+{
+    type Item = u8;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        let first = self.iter.next()?;
+        let mut symbols = [0usize; N];
+        symbols[0] = self.constellation.demod_hard(first);
+
+        let mut i = 1;
+        while i < N {
+            let point = self.iter.next()?;
+            symbols[i] = self.constellation.demod_hard(point);
+            i += 1;
+        }
+
+        Some(O::pack_symbols(symbols))
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

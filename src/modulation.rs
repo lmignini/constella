@@ -1,5 +1,7 @@
+use crate::bits::DirectBitCodec;
 use crate::bits::{BitChunker, BitOrder, MsbFirst, PadZeros, Padding};
 use crate::constellation::{Constellation, ConstellationGeometry, General, Normalized};
+use core::marker::PhantomData;
 use num_complex::Complex;
 
 pub trait Modulatable<I, T, O = MsbFirst, P = PadZeros>
@@ -14,7 +16,54 @@ where
     fn modulate_with(self, iter: I) -> Self::Output;
 }
 
-macro_rules! impl_modulatable_sizes {
+macro_rules! impl_direct_modulatable_sizes {
+    ($( ($m:expr, $k:expr, $n:expr) ),* $(,)?) => {
+        $(
+            impl<T: Copy + Default, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
+                #[inline]
+                pub fn modulate<I: Iterator<Item = u8>>(
+                    self,
+                    iter: I,
+                ) -> DirectModulationIter<I, T, $m, $k, $n, G, MsbFirst>
+                where
+                    MsbFirst: DirectBitCodec<$k, $n>,
+                {
+                    DirectModulationIter::new(iter, self)
+                }
+
+                #[inline]
+                pub fn modulate_with<I: Iterator<Item = u8>, O: BitOrder + DirectBitCodec<$k, $n>, P: Padding>(
+                    self,
+                    iter: I,
+                ) -> DirectModulationIter<I, T, $m, $k, $n, G, O> {
+                    DirectModulationIter::with_order(iter, self)
+                }
+            }
+
+            impl<I, T, G, O, P> Modulatable<I, T, O, P> for Constellation<T, $m, Normalized, G>
+            where
+                I: Iterator<Item = u8>,
+                G: ConstellationGeometry,
+                O: BitOrder + DirectBitCodec<$k, $n>,
+                P: Padding,
+                T: Copy + Default,
+            {
+                type Output = DirectModulationIter<I, T, $m, $k, $n, G, O>;
+
+                #[inline]
+                fn modulate(self, iter: I) -> Self::Output {
+                    DirectModulationIter::with_order(iter, self)
+                }
+
+                #[inline]
+                fn modulate_with(self, iter: I) -> Self::Output {
+                    DirectModulationIter::with_order(iter, self)
+                }
+            }
+        )*
+    };
+}
+macro_rules! impl_fallback_modulatable_sizes {
     ($( ($m:expr, $k:expr) ),* $(,)?) => {
         $(
             impl<T: Copy, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
@@ -58,22 +107,23 @@ macro_rules! impl_modulatable_sizes {
         )*
     };
 }
-
-impl_modulatable_sizes!(
-    (2, 1),
-    (4, 2),
-    (8, 3),
-    (16, 4),
-    (32, 5),
-    (64, 6),
-    (128, 7),
-    (256, 8),
-    (512, 9),
-    (1024, 10),
-    (2048, 11),
-    (4096, 12),
+impl_direct_modulatable_sizes!(
+    (2, 1, 8),   // BPSK
+    (4, 2, 4),   // QPSK
+    (16, 4, 2),  // 16-QAM
+    (256, 8, 1), // 256-QAM
 );
 
+impl_fallback_modulatable_sizes!(
+    (8, 3),     // 8-PSK
+    (32, 5),    // 32-QAM
+    (64, 6),    // 64-QAM
+    (128, 7),   // 128-QAM
+    (512, 9),   // 512-QAM
+    (1024, 10), // 1024-QAM
+    (2048, 11), // 2048-QAM
+    (4096, 12), // 4096-QAM
+);
 pub trait ModulateExt: Iterator<Item = u8> + Sized {
     #[inline]
     fn modulate<C, T>(self, constellation: C) -> C::Output
@@ -161,6 +211,95 @@ where
     fn next(&mut self) -> Option<Self::Item> {
         let symbol_index = self.bit_chunker.next()?;
         Some(self.constellation[symbol_index])
+    }
+}
+
+pub struct DirectModulationIter<
+    I,
+    T,
+    const M: usize,
+    const K: usize,
+    const N: usize,
+    G = General,
+    O = MsbFirst,
+> where
+    I: Iterator<Item = u8>,
+    G: ConstellationGeometry,
+    T: Copy,
+    O: BitOrder + DirectBitCodec<K, N>,
+{
+    iter: I,
+    constellation: Constellation<T, M, Normalized, G>,
+    buffer: [Complex<T>; N],
+    index: u8,
+    _marker: PhantomData<O>,
+}
+
+impl<I, T, const M: usize, const K: usize, const N: usize, G>
+    DirectModulationIter<I, T, M, K, N, G, MsbFirst>
+where
+    I: Iterator<Item = u8>,
+    G: ConstellationGeometry,
+    T: Copy + Default,
+    MsbFirst: DirectBitCodec<K, N>,
+{
+    #[inline]
+    pub fn new(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
+        Self::with_order(iter, constellation)
+    }
+}
+
+impl<I, T, const M: usize, const K: usize, const N: usize, G, O>
+    DirectModulationIter<I, T, M, K, N, G, O>
+where
+    I: Iterator<Item = u8>,
+    G: ConstellationGeometry,
+    T: Copy + Default,
+    O: BitOrder + DirectBitCodec<K, N>,
+{
+    #[inline]
+    pub fn with_order(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
+        assert_eq!(1 << K, M, "Constellation size M ({M}) must equal 2^K");
+        assert_eq!(K * N, 8, "K * N must equal 8 bits per byte");
+        Self {
+            iter,
+            constellation,
+            buffer: [Complex::new(T::default(), T::default()); N],
+            index: N as u8, // Set cursor past the end to trigger an immediate byte read
+            _marker: PhantomData,
+        }
+    }
+}
+
+impl<I, T, const M: usize, const K: usize, const N: usize, G, O> Iterator
+    for DirectModulationIter<I, T, M, K, N, G, O>
+where
+    I: Iterator<Item = u8>,
+    G: ConstellationGeometry,
+    T: Copy + Default,
+    O: BitOrder + DirectBitCodec<K, N>,
+{
+    type Item = Complex<T>;
+
+    #[inline(always)]
+    fn next(&mut self) -> Option<Self::Item> {
+        if (self.index as usize) < N {
+            let item = self.buffer[self.index as usize];
+            self.index += 1;
+            Some(item)
+        } else {
+            let byte = self.iter.next()?;
+            let indices = O::unpack_byte(byte);
+
+            let mut i = 0;
+            while i < N {
+                self.buffer[i] = self.constellation[indices[i]];
+                i += 1;
+            }
+
+            self.index = 1;
+            Some(self.buffer[0])
+        }
     }
 }
 

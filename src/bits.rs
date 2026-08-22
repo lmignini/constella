@@ -1,4 +1,7 @@
+mod direct;
+
 use core::marker::PhantomData;
+pub use direct::DirectBitCodec;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct MsbFirst;
@@ -101,6 +104,205 @@ impl BitOrder for LsbFirst {
     }
 }
 
+// =============================================================================
+// K = 1, N = 8 (BPSK)
+// =============================================================================
+
+/// Direct 1-bit (BPSK) codec in MSB-first bit order.
+///
+/// Maps bits 7 down to 0 sequentially to symbol indices 0 through 7.
+impl DirectBitCodec<1, 8> for MsbFirst {
+    /// Unpacks a byte into eight 1-bit symbol indices from MSB (`bit 7`) to LSB (`bit 0`).
+    #[inline]
+    fn unpack_byte(byte: u8) -> [usize; 8] {
+        [
+            ((byte >> 7) & 1) as usize,
+            ((byte >> 6) & 1) as usize,
+            ((byte >> 5) & 1) as usize,
+            ((byte >> 4) & 1) as usize,
+            ((byte >> 3) & 1) as usize,
+            ((byte >> 2) & 1) as usize,
+            ((byte >> 1) & 1) as usize,
+            (byte & 1) as usize,
+        ]
+    }
+
+    /// Packs eight 1-bit symbol indices into a single byte with `symbols[0]` at `bit 7`.
+    #[inline]
+    fn pack_symbols(symbols: [usize; 8]) -> u8 {
+        (((symbols[0] & 1) << 7)
+            | ((symbols[1] & 1) << 6)
+            | ((symbols[2] & 1) << 5)
+            | ((symbols[3] & 1) << 4)
+            | ((symbols[4] & 1) << 3)
+            | ((symbols[5] & 1) << 2)
+            | ((symbols[6] & 1) << 1)
+            | (symbols[7] & 1)) as u8
+    }
+}
+
+/// Direct 1-bit (BPSK) codec in LSB-first bit order.
+///
+/// Maps bits 0 up to 7 sequentially to symbol indices 0 through 7.
+impl DirectBitCodec<1, 8> for LsbFirst {
+    /// Unpacks a byte into eight 1-bit symbol indices from LSB (`bit 0`) to MSB (`bit 7`).
+    #[inline]
+    fn unpack_byte(byte: u8) -> [usize; 8] {
+        [
+            (byte & 1) as usize,
+            ((byte >> 1) & 1) as usize,
+            ((byte >> 2) & 1) as usize,
+            ((byte >> 3) & 1) as usize,
+            ((byte >> 4) & 1) as usize,
+            ((byte >> 5) & 1) as usize,
+            ((byte >> 6) & 1) as usize,
+            ((byte >> 7) & 1) as usize,
+        ]
+    }
+
+    /// Packs eight 1-bit symbol indices into a single byte with `symbols[0]` at `bit 0`.
+    #[inline]
+    fn pack_symbols(symbols: [usize; 8]) -> u8 {
+        ((symbols[0] & 1)
+            | ((symbols[1] & 1) << 1)
+            | ((symbols[2] & 1) << 2)
+            | ((symbols[3] & 1) << 3)
+            | ((symbols[4] & 1) << 4)
+            | ((symbols[5] & 1) << 5)
+            | ((symbols[6] & 1) << 6)
+            | ((symbols[7] & 1) << 7)) as u8
+    }
+}
+
+// =============================================================================
+// K = 2, N = 4 (QPSK / 4-QAM)
+// =============================================================================
+
+/// Direct 2-bit (QPSK / 4-QAM) codec in MSB-first bit order.
+///
+/// Maps 2-bit dibits `bits 7..6`, `5..4`, `3..2`, and `1..0` to symbol indices 0 through 3.
+impl DirectBitCodec<2, 4> for MsbFirst {
+    /// Unpacks a byte into four 2-bit symbol indices in MSB-to-LSB order.
+    #[inline]
+    fn unpack_byte(byte: u8) -> [usize; 4] {
+        [
+            ((byte >> 6) & 0x03) as usize,
+            ((byte >> 4) & 0x03) as usize,
+            ((byte >> 2) & 0x03) as usize,
+            (byte & 0x03) as usize,
+        ]
+    }
+
+    /// Packs four 2-bit symbol indices into a single byte with `symbols[0]` as the most significant dibit.
+    #[inline]
+    fn pack_symbols(symbols: [usize; 4]) -> u8 {
+        (((symbols[0] & 0x03) << 6)
+            | ((symbols[1] & 0x03) << 4)
+            | ((symbols[2] & 0x03) << 2)
+            | (symbols[3] & 0x03)) as u8
+    }
+}
+
+/// Direct 2-bit (QPSK / 4-QAM) codec in LSB-first bit order.
+///
+/// Maps 2-bit dibits `bits 1..0`, `3..2`, `5..4`, and `7..6` to symbol indices 0 through 3.
+impl DirectBitCodec<2, 4> for LsbFirst {
+    /// Unpacks a byte into four 2-bit symbol indices in LSB-to-MSB order.
+    #[inline]
+    fn unpack_byte(byte: u8) -> [usize; 4] {
+        [
+            (byte & 0x03) as usize,
+            ((byte >> 2) & 0x03) as usize,
+            ((byte >> 4) & 0x03) as usize,
+            ((byte >> 6) & 0x03) as usize,
+        ]
+    }
+
+    /// Packs four 2-bit symbol indices into a single byte with `symbols[0]` as the least significant dibit.
+    #[inline]
+    fn pack_symbols(symbols: [usize; 4]) -> u8 {
+        ((symbols[0] & 0x03)
+            | ((symbols[1] & 0x03) << 2)
+            | ((symbols[2] & 0x03) << 4)
+            | ((symbols[3] & 0x03) << 6)) as u8
+    }
+}
+
+// =============================================================================
+// K = 4, N = 2 (16-QAM / 16-PSK)
+// =============================================================================
+
+/// Direct 4-bit (16-QAM / 16-PSK) codec in MSB-first bit order.
+///
+/// Maps the high nibble (`bits 7..4`) to symbol index 0 and the low nibble (`bits 3..0`) to symbol index 1.
+impl DirectBitCodec<4, 2> for MsbFirst {
+    /// Unpacks a byte into two 4-bit symbol indices in `[MSB_nibble, LSB_nibble]` order.
+    #[inline]
+    fn unpack_byte(byte: u8) -> [usize; 2] {
+        [((byte >> 4) & 0x0F) as usize, (byte & 0x0F) as usize]
+    }
+
+    /// Packs two 4-bit symbol indices into a single byte using `(sym0 << 4) | sym1`.
+    #[inline]
+    fn pack_symbols(symbols: [usize; 2]) -> u8 {
+        (((symbols[0] & 0x0F) << 4) | (symbols[1] & 0x0F)) as u8
+    }
+}
+
+/// Direct 4-bit (16-QAM / 16-PSK) codec in LSB-first bit order.
+///
+/// Maps the low nibble (`bits 3..0`) to symbol index 0 and the high nibble (`bits 7..4`) to symbol index 1.
+impl DirectBitCodec<4, 2> for LsbFirst {
+    /// Unpacks a byte into two 4-bit symbol indices in `[LSB_nibble, MSB_nibble]` order.
+    #[inline]
+    fn unpack_byte(byte: u8) -> [usize; 2] {
+        [(byte & 0x0F) as usize, ((byte >> 4) & 0x0F) as usize]
+    }
+
+    /// Packs two 4-bit symbol indices into a single byte using `(sym1 << 4) | sym0`.
+    #[inline]
+    fn pack_symbols(symbols: [usize; 2]) -> u8 {
+        (((symbols[1] & 0x0F) << 4) | (symbols[0] & 0x0F)) as u8
+    }
+}
+
+// =============================================================================
+// K = 8, N = 1 (256-QAM / 256-PSK)
+// =============================================================================
+
+/// Direct 8-bit (256-QAM / 256-PSK) codec in MSB-first bit order.
+///
+/// Directly maps a full byte to a single 8-bit symbol index with zero bit manipulation.
+impl DirectBitCodec<8, 1> for MsbFirst {
+    /// Unpacks a single byte into a 1-element array containing the symbol index.
+    #[inline]
+    fn unpack_byte(byte: u8) -> [usize; 1] {
+        [byte as usize]
+    }
+
+    /// Packs a single 8-bit symbol index into a byte.
+    #[inline]
+    fn pack_symbols(symbols: [usize; 1]) -> u8 {
+        symbols[0] as u8
+    }
+}
+
+/// Direct 8-bit (256-QAM / 256-PSK) codec in LSB-first bit order.
+///
+/// Directly maps a full byte to a single 8-bit symbol index with zero bit manipulation.
+impl DirectBitCodec<8, 1> for LsbFirst {
+    /// Unpacks a single byte into a 1-element array containing the symbol index.
+    #[inline]
+    fn unpack_byte(byte: u8) -> [usize; 1] {
+        [byte as usize]
+    }
+
+    /// Packs a single 8-bit symbol index into a byte.
+    #[inline]
+    fn pack_symbols(symbols: [usize; 1]) -> u8 {
+        symbols[0] as u8
+    }
+}
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PadZeros;
 
