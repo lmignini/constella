@@ -189,7 +189,7 @@ fn main() {
 
 ## Architecture & Design Principles
 
-```
+```text
   +-------------------------------------------------------------+
   |                        Input Data                           |
   |                (&[u8] / Iterator<Item = u8>)                |
