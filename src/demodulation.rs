@@ -64,7 +64,7 @@ impl<const M: usize> DemodPoint<f32> for Constellation<f32, M, Normalized, Gener
     }
 }
 
-impl<const M: usize> DemodPoint<f32> for Constellation<f32, M, Normalized, SquareQam> {
+impl<const M: usize> DemodPoint<f32> for Constellation<f32, M, Normalized, SquareQam<f32>> {
     #[inline(always)]
     fn demod_hard(&self, point: Complex<f32>) -> usize {
         self.demodulate_hard_point(point)
@@ -78,7 +78,7 @@ impl<const M: usize> DemodPoint<f64> for Constellation<f64, M, Normalized, Gener
     }
 }
 
-impl<const M: usize> DemodPoint<f64> for Constellation<f64, M, Normalized, SquareQam> {
+impl<const M: usize> DemodPoint<f64> for Constellation<f64, M, Normalized, SquareQam<f64>> {
     #[inline(always)]
     fn demod_hard(&self, point: Complex<f64>) -> usize {
         self.demodulate_hard_point(point)

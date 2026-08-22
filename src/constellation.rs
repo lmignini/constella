@@ -13,7 +13,7 @@ pub struct Normalized;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct Unnormalized;
 
-pub trait ConstellationState {}
+pub trait ConstellationState: Copy + Clone {}
 impl ConstellationState for Normalized {}
 impl ConstellationState for Unnormalized {}
 
@@ -23,25 +23,28 @@ pub struct General;
 
 /// Compile-time marker for square QAM geometry (monomorphizes to fast $O(1)$ 1D slicing).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct SquareQam;
+pub struct SquareQam<T: Copy> {
+    pub scale: T,
+    pub offset: T,
+}
 
-pub trait ConstellationGeometry {}
+pub trait ConstellationGeometry: Copy + Clone {}
 impl ConstellationGeometry for General {}
-impl ConstellationGeometry for SquareQam {}
+impl<T: Copy> ConstellationGeometry for SquareQam<T> {}
 
 pub type Bpsk<T = f32, S = Normalized> = Constellation<T, 2, S, General>;
 pub type Qpsk<T = f32, S = Normalized> = Constellation<T, 4, S, General>;
 pub type Psk8<T = f32, S = Normalized> = Constellation<T, 8, S, General>;
 
-pub type Qam16<T = f32, S = Normalized> = Constellation<T, 16, S, SquareQam>;
-pub type Qam64<T = f32, S = Normalized> = Constellation<T, 64, S, SquareQam>;
-pub type Qam256<T = f32, S = Normalized> = Constellation<T, 256, S, SquareQam>;
-pub type Qam1024<T = f32, S = Normalized> = Constellation<T, 1024, S, SquareQam>;
-pub type Qam4096<T = f32, S = Normalized> = Constellation<T, 4096, S, SquareQam>;
+pub type Qam16<T = f32, S = Normalized> = Constellation<T, 16, S, SquareQam<T>>;
+pub type Qam64<T = f32, S = Normalized> = Constellation<T, 64, S, SquareQam<T>>;
+pub type Qam256<T = f32, S = Normalized> = Constellation<T, 256, S, SquareQam<T>>;
+pub type Qam1024<T = f32, S = Normalized> = Constellation<T, 1024, S, SquareQam<T>>;
+pub type Qam4096<T = f32, S = Normalized> = Constellation<T, 4096, S, SquareQam<T>>;
 
 /// A digital modulation constellation of size `M` using scalar precision `T`.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(C)]
+#[repr(Rust)]
 pub struct Constellation<T, const M: usize, S = Normalized, G = General>
 where
     S: ConstellationState,
@@ -50,7 +53,8 @@ where
     points: [Complex<T>; M],
     scale_factor: T,
     energy: T,
-    _marker: PhantomData<(S, G)>,
+    geometry: G,
+    _state: PhantomData<S>,
 }
 
 impl<T, const M: usize, S: ConstellationState, G: ConstellationGeometry> core::ops::Index<usize>
@@ -86,7 +90,8 @@ macro_rules! impl_constellation_float {
                     points,
                     energy: avg_energy,
                     scale_factor,
-                    _marker: PhantomData,
+                    geometry: General,
+                    _state: PhantomData,
                 }
             }
 
@@ -111,7 +116,8 @@ macro_rules! impl_constellation_float {
                     points: new_points,
                     scale_factor,
                     energy: 1.0,
-                    _marker: PhantomData,
+                    geometry: General,
+                    _state: PhantomData,
                 }
             }
 
@@ -156,23 +162,22 @@ macro_rules! impl_constellation_float {
                     points: norm.points,
                     scale_factor: norm.scale_factor,
                     energy: norm.energy,
-                    _marker: PhantomData,
+                    geometry: self.geometry,
+                    _state: PhantomData,
                 }
             }
         }
 
         // --- Fast-Path O(1) Slicing for Square QAM (Zero Branching) ---
-        impl<const M: usize> Constellation<$ty, M, Normalized, SquareQam> {
+        impl<const M: usize> Constellation<$ty, M, Normalized, SquareQam<$ty>> {
             #[inline(always)]
             pub fn demodulate_hard_point(&self, point: Complex<$ty>) -> usize {
                 let k = Self::BITS_PER_SYMBOL;
                 let k_axis = k / 2;
                 let l = 1 << k_axis;
-                let inv_scale = (1.0 as $ty) / self.scale_factor;
 
                 let slice_axis = |val: $ty| -> usize {
-                    let u = val * inv_scale;
-                    let w = (u + (l as $ty)) * (0.5 as $ty);
+                    let w = val * self.geometry.scale + self.geometry.offset;
                     if w <= 0.0 {
                         0
                     } else {
@@ -295,7 +300,7 @@ macro_rules! impl_constellation_float {
             }
         }
 
-        impl<const M: usize> Constellation<$ty, M, Normalized, SquareQam> {
+        impl<const M: usize> Constellation<$ty, M, Normalized, SquareQam<$ty>> {
             pub const fn m_qam() -> Self {
                 assert!(gives_square_constellation(M));
                 let k = Self::BITS_PER_SYMBOL;
@@ -323,7 +328,11 @@ macro_rules! impl_constellation_float {
                     points: norm.points,
                     scale_factor: norm.scale_factor,
                     energy: norm.energy,
-                    _marker: PhantomData,
+                    geometry: SquareQam {
+                        scale: 1.0 / (2.0 * norm.scale_factor),
+                        offset: l as $ty / 2.0,
+                    },
+                    _state: PhantomData,
                 }
             }
         }
@@ -333,11 +342,11 @@ macro_rules! impl_constellation_float {
 macro_rules! impl_qam_consts {
     ($ty:ident, $( ($m:expr, $const_name:ident) ),* $(,)?) => {
         $(
-            impl Constellation<$ty, $m, Normalized, SquareQam> {
+            impl Constellation<$ty, $m, Normalized, SquareQam<$ty>> {
                 pub const $const_name: Self = Self::m_qam();
             }
 
-            impl Default for Constellation<$ty, $m, Normalized, SquareQam> {
+            impl Default for Constellation<$ty, $m, Normalized, SquareQam<$ty>> {
                 #[inline]
                 fn default() -> Self { Self::$const_name }
             }
