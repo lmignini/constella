@@ -39,6 +39,7 @@ harness = false
 
 [profile.release]
 opt-level = 3
+debug = true
 lto = "fat"
 codegen-units = 1
 panic = "abort"
