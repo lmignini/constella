@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 authors = ["Leonardo Mignini <l.mignini@icloud.com>"]
 description = "A no-std bit modulation and demodulation library with const-evaluable constellations"
+repository = "https://github.com/lmignini/constella"
 license = "MIT OR Apache-2.0"
 readme = "README.md"
 keywords = ["dsp", "modulation", "qam", "qpsk", "no-std"]
