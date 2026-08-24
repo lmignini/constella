@@ -11,7 +11,7 @@ pub mod demodulation;
 pub mod modulation;
 pub(crate) mod utils;
 
-mod channel;
+pub mod channel;
 
 pub use constellation::{
     Bpsk, Constellation, ConstellationGeometry, ConstellationState, General, Normalized, Psk8,

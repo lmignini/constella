@@ -186,6 +186,19 @@ where
         let point = self.iter.next()?;
         Some(self.channel.apply_point(point))
     }
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+
+impl<I, T, R> ExactSizeIterator for AwgnIter<I, T, R>
+where
+    I: Iterator<Item = Complex<T>>,
+    T: Float,
+    StandardNormal: Distribution<T>,
+    R: rand_core::Rng,
+{
 }
 
 #[cfg(test)]

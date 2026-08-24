@@ -85,6 +85,42 @@ impl<const M: usize> DemodPoint<f64> for Constellation<f64, M, Normalized, Squar
     }
 }
 
+impl<const M: usize> DemodPoint<f32>
+    for Constellation<f32, M, Normalized, crate::constellation::StandardPsk>
+{
+    #[inline(always)]
+    fn demod_hard(&self, point: Complex<f32>) -> usize {
+        self.demodulate_hard_point(point)
+    }
+}
+
+impl<const M: usize> DemodPoint<f32>
+    for Constellation<f32, M, Normalized, crate::constellation::RotatedPsk<f32>>
+{
+    #[inline(always)]
+    fn demod_hard(&self, point: Complex<f32>) -> usize {
+        self.demodulate_hard_point(point)
+    }
+}
+
+impl<const M: usize> DemodPoint<f64>
+    for Constellation<f64, M, Normalized, crate::constellation::StandardPsk>
+{
+    #[inline(always)]
+    fn demod_hard(&self, point: Complex<f64>) -> usize {
+        self.demodulate_hard_point(point)
+    }
+}
+
+impl<const M: usize> DemodPoint<f64>
+    for Constellation<f64, M, Normalized, crate::constellation::RotatedPsk<f64>>
+{
+    #[inline(always)]
+    fn demod_hard(&self, point: Complex<f64>) -> usize {
+        self.demodulate_hard_point(point)
+    }
+}
+
 impl<const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder + 'static>
     SoftDemodPoint<f32, K, O> for Constellation<f32, M, Normalized, G>
 {
@@ -559,6 +595,20 @@ where
         let point = self.iter.next()?;
         Some(self.constellation.demod_hard(point))
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+// Automatically inherits len() and is_empty() from size_hint()
+impl<I, T, const M: usize, G> ExactSizeIterator for HardSymbolDemodIter<I, T, M, G>
+where
+    I: ExactSizeIterator<Item = Complex<T>>,
+    T: Copy,
+    G: ConstellationGeometry,
+    Constellation<T, M, Normalized, G>: DemodPoint<T>,
+{
 }
 
 pub struct HardByteDemodIter<I, T, const M: usize, const K: usize, G = General, O = MsbFirst>
@@ -616,6 +666,10 @@ where
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         self.packer.next()
+    }
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.packer.size_hint()
     }
 }
 
@@ -683,8 +737,22 @@ where
         let point = self.iter.next()?;
         Some(self.constellation.demod_soft(point, self.noise_var))
     }
-}
 
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.iter.size_hint()
+    }
+}
+impl<I, T, const M: usize, const K: usize, G, O> ExactSizeIterator
+    for SoftSymbolDemodIter<I, T, M, K, G, O>
+where
+    I: ExactSizeIterator<Item = Complex<T>>,
+    T: Copy,
+    G: ConstellationGeometry,
+    O: BitOrder + 'static,
+    Constellation<T, M, Normalized, G>: SoftDemodPoint<T, K, O>,
+{
+}
 pub struct SoftBitDemodIter<I, T, const M: usize, const K: usize, G = General, O = MsbFirst>
 where
     G: ConstellationGeometry,
@@ -748,6 +816,29 @@ where
             Some(self.buffer[0])
         }
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lower, upper) = self.symbol_iter.size_hint();
+        let buffered = K.saturating_sub(self.index);
+
+        let lower_total = lower.saturating_mul(K).saturating_add(buffered);
+        let upper_total = upper.and_then(|u| u.checked_mul(K)?.checked_add(buffered));
+
+        (lower_total, upper_total)
+    }
+}
+
+// Marker implementation
+impl<I, T, const M: usize, const K: usize, G, O> ExactSizeIterator
+    for SoftBitDemodIter<I, T, M, K, G, O>
+where
+    I: ExactSizeIterator<Item = Complex<T>>,
+    T: Copy + Default,
+    G: ConstellationGeometry,
+    O: BitOrder + 'static,
+    Constellation<T, M, Normalized, G>: SoftDemodPoint<T, K, O>,
+{
 }
 pub struct DirectByteDemodIter<I, T, const M: usize, const K: usize, const N: usize, G, O>
 where
@@ -825,6 +916,24 @@ where
 
         Some(O::pack_symbols(symbols))
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lower, upper) = self.iter.size_hint();
+        (lower / N, upper.map(|u| u / N))
+    }
+}
+
+// Marker implementation
+impl<I, T, const M: usize, const K: usize, const N: usize, G, O> ExactSizeIterator
+    for DirectByteDemodIter<I, T, M, K, N, G, O>
+where
+    I: ExactSizeIterator<Item = Complex<T>>,
+    G: ConstellationGeometry,
+    T: Copy,
+    O: BitOrder + DirectBitCodec<K, N>,
+    Constellation<T, M, Normalized, G>: DemodPoint<T>,
+{
 }
 #[cfg(test)]
 mod tests {

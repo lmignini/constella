@@ -301,6 +301,28 @@ where
             Some(self.buffer[0])
         }
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lower, upper) = self.iter.size_hint();
+        let buffered = (N).saturating_sub(self.index as usize);
+
+        let lower_total = lower.saturating_mul(N).saturating_add(buffered);
+        let upper_total = upper.and_then(|u| u.checked_mul(N)?.checked_add(buffered));
+
+        (lower_total, upper_total)
+    }
+}
+
+// Empty ExactSizeIterator implementation
+impl<I, T, const M: usize, const K: usize, const N: usize, G, O> ExactSizeIterator
+    for DirectModulationIter<I, T, M, K, N, G, O>
+where
+    I: ExactSizeIterator<Item = u8>,
+    G: ConstellationGeometry,
+    T: Copy + Default,
+    O: BitOrder + DirectBitCodec<K, N>,
+{
 }
 
 #[cfg(test)]

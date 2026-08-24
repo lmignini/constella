@@ -3,6 +3,8 @@ use crate::bits::MsbFirst;
 use crate::utils::{binary_to_gray, gives_square_constellation, is_valid_constellation_size};
 use core::marker::PhantomData;
 use num_complex::Complex;
+#[allow(unused_imports)]
+use num_traits::Float;
 use trig_const::{cos, sin, sqrt};
 
 /// Compile-time marker for normalized constellation energy.
@@ -28,13 +30,26 @@ pub struct SquareQam<T: Copy> {
     pub offset: T,
 }
 
+/// Compile-time marker for standard canonical M-PSK geometry (0 FLOPs for BPSK/QPSK).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct StandardPsk;
+
+/// Compile-time marker for M-PSK geometry with an arbitrary phase offset.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RotatedPsk<T: Copy> {
+    pub phase_offset: T,
+    pub derot: Complex<T>,
+}
+
 pub trait ConstellationGeometry: Copy + Clone {}
 impl ConstellationGeometry for General {}
+impl ConstellationGeometry for StandardPsk {}
+impl<T: Copy> ConstellationGeometry for RotatedPsk<T> {}
 impl<T: Copy> ConstellationGeometry for SquareQam<T> {}
 
-pub type Bpsk<T = f32, S = Normalized> = Constellation<T, 2, S, General>;
-pub type Qpsk<T = f32, S = Normalized> = Constellation<T, 4, S, General>;
-pub type Psk8<T = f32, S = Normalized> = Constellation<T, 8, S, General>;
+pub type Bpsk<T = f32, S = Normalized> = Constellation<T, 2, S, StandardPsk>;
+pub type Qpsk<T = f32, S = Normalized> = Constellation<T, 4, S, StandardPsk>;
+pub type Psk8<T = f32, S = Normalized> = Constellation<T, 8, S, StandardPsk>;
 
 pub type Qam16<T = f32, S = Normalized> = Constellation<T, 16, S, SquareQam<T>>;
 pub type Qam64<T = f32, S = Normalized> = Constellation<T, 64, S, SquareQam<T>>;
@@ -175,6 +190,73 @@ macro_rules! impl_constellation_float {
             }
         }
 
+        // --- Standard M-PSK Demodulation (0 FLOPs for BPSK/QPSK via Compile-Time DCE) ---
+        impl<const M: usize> Constellation<$ty, M, Normalized, StandardPsk> {
+            #[inline(always)]
+            pub fn demodulate_hard_point(&self, point: Complex<$ty>) -> usize {
+                if M == 2 {
+                    // Standard BPSK (theta_0 = 0): Zero multiplications
+                    (point.re < 0.0) as usize
+                } else if M == 4 {
+                    // Standard QPSK (theta_0 = pi/4): Zero multiplications
+                    let neg_q = (point.im < 0.0) as usize;
+                    let neg_i = (point.re < 0.0) as usize;
+                    (neg_q << 1) | neg_i
+                } else {
+                    // Standard M-PSK (M >= 8): O(1) Sector Quantization via atan2
+                    let two_pi = 2.0 * core::$ty::consts::PI;
+                    let sector_width = two_pi / (M as $ty);
+                    let half_sector = sector_width / 2.0;
+
+                    let phi = Float::atan2(point.im, point.re);
+                    let mut aligned = phi + half_sector;
+
+                    if aligned < 0.0 {
+                        aligned += two_pi;
+                    } else if aligned >= two_pi {
+                        aligned -= two_pi;
+                    }
+
+                    let sector_idx = ((aligned / sector_width) as usize) % M;
+                    binary_to_gray(sector_idx)
+                }
+            }
+        }
+
+        // --- Rotated M-PSK Demodulation (1 Complex Multiply for BPSK/QPSK) ---
+        impl<const M: usize> Constellation<$ty, M, Normalized, RotatedPsk<$ty>> {
+            #[inline(always)]
+            pub fn demodulate_hard_point(&self, point: Complex<$ty>) -> usize {
+                if M == 2 {
+                    // Rotated BPSK (Arbitrary theta_0): 1 Complex Multiply + Sign Check
+                    let p_rot = point * self.geometry.derot;
+                    (p_rot.re < 0.0) as usize
+                } else if M == 4 {
+                    // Rotated QPSK (Arbitrary theta_0): 1 Complex Multiply + Quadrant Slicing
+                    let p_rot = point * self.geometry.derot;
+                    let neg_q = (p_rot.im < 0.0) as usize;
+                    let neg_i = (p_rot.re < 0.0) as usize;
+                    (neg_q << 1) | neg_i
+                } else {
+                    // Rotated M-PSK (M >= 8): O(1) Sector Quantization with Phase Subtraction
+                    let two_pi = 2.0 * core::$ty::consts::PI;
+                    let sector_width = two_pi / (M as $ty);
+                    let half_sector = sector_width / 2.0;
+
+                    let phi = Float::atan2(point.im, point.re);
+                    let mut aligned = phi - self.geometry.phase_offset + half_sector;
+
+                    if aligned < 0.0 {
+                        aligned += two_pi;
+                    } else if aligned >= two_pi {
+                        aligned -= two_pi;
+                    }
+
+                    let sector_idx = ((aligned / sector_width) as usize) % M;
+                    binary_to_gray(sector_idx)
+                }
+            }
+        }
         // --- Fast-Path O(1) Slicing for Square QAM ---
         impl<const M: usize> Constellation<$ty, M, Normalized, SquareQam<$ty>> {
             #[inline(always)]
@@ -274,8 +356,37 @@ macro_rules! impl_constellation_float {
             }
         }
 
-        // --- Standard Constellation Generators ---
-        impl<const M: usize> Constellation<$ty, M, Normalized, General> {
+        // Standard PSK Constructors
+        impl<const M: usize> Constellation<$ty, M, Normalized, StandardPsk> {
+            pub const fn m_psk() -> Self {
+                let default_phase = if M == 4 {
+                    core::$ty::consts::PI / 4.0
+                } else {
+                    0.0 as $ty
+                };
+
+                let mut k = 0;
+                let mut points = [Complex::new(0.0 as $ty, 0.0 as $ty); M];
+                while k < M {
+                    let theta_k = default_phase
+                        + (2.0 * core::f64::consts::PI * (k as f64) / (M as f64)) as $ty;
+                    points[binary_to_gray(k)] = Self::from_polar(1.0 as $ty, theta_k);
+                    k += 1;
+                }
+                let norm =
+                    Constellation::<$ty, M, Normalized, General>::from_points_normalized(points);
+                Self {
+                    points: norm.points,
+                    scale_factor: norm.scale_factor,
+                    energy: norm.energy,
+                    geometry: StandardPsk,
+                    _state: PhantomData,
+                }
+            }
+        }
+
+        // Rotated PSK Constructors
+        impl<const M: usize> Constellation<$ty, M, Normalized, RotatedPsk<$ty>> {
             pub const fn m_psk_with_phase(phase_offset: $ty) -> Self {
                 let mut k = 0;
                 let mut points = [Complex::new(0.0 as $ty, 0.0 as $ty); M];
@@ -285,25 +396,43 @@ macro_rules! impl_constellation_float {
                     points[binary_to_gray(k)] = Self::from_polar(1.0 as $ty, theta_k);
                     k += 1;
                 }
-                Self::from_points_normalized(points)
-            }
 
-            pub const fn m_psk() -> Self {
-                Self::m_psk_with_phase(0.0 as $ty)
+                let derot_angle = if M == 2 {
+                    -phase_offset
+                } else if M == 4 {
+                    (core::$ty::consts::PI / 4.0) - phase_offset
+                } else {
+                    0.0 as $ty
+                };
+
+                let derot = Self::from_polar(1.0 as $ty, derot_angle);
+                let norm =
+                    Constellation::<$ty, M, Normalized, General>::from_points_normalized(points);
+
+                Self {
+                    points: norm.points,
+                    scale_factor: norm.scale_factor,
+                    energy: norm.energy,
+                    geometry: RotatedPsk {
+                        phase_offset,
+                        derot,
+                    },
+                    _state: PhantomData,
+                }
             }
         }
 
-        impl Constellation<$ty, 2, Normalized, General> {
+        impl Constellation<$ty, 2, Normalized, StandardPsk> {
             pub const BPSK: Self = Self::m_psk();
             pub const fn bpsk() -> Self {
                 Self::m_psk()
             }
         }
 
-        impl Constellation<$ty, 4, Normalized, General> {
-            pub const QPSK: Self = Self::m_psk_with_phase(core::$ty::consts::PI / 4.0);
+        impl Constellation<$ty, 4, Normalized, StandardPsk> {
+            pub const QPSK: Self = Self::m_psk();
             pub const fn qpsk() -> Self {
-                Self::m_psk_with_phase(core::$ty::consts::PI / 4.0)
+                Self::m_psk()
             }
         }
 
