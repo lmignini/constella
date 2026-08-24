@@ -68,14 +68,33 @@ impl<T, const M: usize, S: ConstellationState, G: ConstellationGeometry> core::o
     }
 }
 
+impl<T: Copy, const M: usize, S: ConstellationState, G: ConstellationGeometry>
+    Constellation<T, M, S, G>
+{
+    pub const BITS_PER_SYMBOL: usize = M.ilog2() as usize;
+
+    #[inline]
+    pub const fn energy(&self) -> T {
+        self.energy
+    }
+
+    #[inline]
+    pub const fn scale_factor(&self) -> T {
+        self.scale_factor
+    }
+
+    #[inline]
+    pub const fn points(&self) -> &[Complex<T>; M] {
+        &self.points
+    }
+}
+
 macro_rules! impl_constellation_float {
     ($ty: ident) => {
         // Universal constructors accessible on Constellation<T, M, ...>
         impl<const M: usize, S: ConstellationState, G: ConstellationGeometry>
             Constellation<$ty, M, S, G>
         {
-            pub const BITS_PER_SYMBOL: usize = M.ilog2() as usize;
-
             /// Constructs an unnormalized general constellation from raw points.
             pub const fn from_points(
                 points: [Complex<$ty>; M],
@@ -130,18 +149,6 @@ macro_rules! impl_constellation_float {
                     i += 1;
                 }
                 acc
-            }
-
-            pub const fn points(&self) -> &[Complex<$ty>; M] {
-                &self.points
-            }
-
-            pub const fn scale_factor(&self) -> $ty {
-                self.scale_factor
-            }
-
-            pub const fn energy(&self) -> $ty {
-                self.energy
             }
 
             const fn from_polar(r: $ty, theta: $ty) -> Complex<$ty> {

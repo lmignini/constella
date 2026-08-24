@@ -12,8 +12,8 @@ keywords = ["dsp", "modulation", "qam", "qpsk", "no-std"]
 
 [features]
 default = []
-std = ["num-complex/std", "num-traits/std", "alloc"]
-alloc = []
+std = ["rand_distr/std", "num-complex/std", "num-traits/std", "alloc"]
+alloc = ["rand_distr/alloc"]
 libm = ["dep:libm", "num-traits/libm"]
 
 [dependencies]
@@ -28,11 +28,16 @@ num-traits = { version = "0.2.*", default-features = false }
 libm = { version = "0.2.*", optional = true }
 
 # Const square root
-trig-const = { version = "0.4.0", default-features = false }
+trig-const = { version = "0.4.*", default-features = false }
 
+# RNG traits and distributions without standard library
+# For channel simulation
+rand_core = { version = "0.10.*", default-features = false }
+rand_distr = { version = "0.6.*", default-features = false }
 
 [dev-dependencies]
 criterion = { version = "0.8.*", features = ["html_reports"] }
+rand_xoshiro = { version = "0.8.*", default-features = false }
 
 [[bench]]
 name = "modem_throughput"
