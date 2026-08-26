@@ -1,3 +1,4 @@
+use crate::channel::ChannelSample;
 use crate::{Constellation, ConstellationGeometry, ConstellationState};
 use num_complex::Complex;
 use num_traits::Float;
@@ -153,18 +154,12 @@ where
     }
 }
 
-pub struct AwgnIter<I, T, R>
-where
-    I: Iterator<Item = Complex<T>>,
-{
+pub struct AwgnIter<I, T, R> {
     iter: I,
     channel: AwgnChannel<T, R>,
 }
 
-impl<I, T, R> AwgnIter<I, T, R>
-where
-    I: Iterator<Item = Complex<T>>,
-{
+impl<I, T, R> AwgnIter<I, T, R> {
     pub fn new(iter: I, channel: AwgnChannel<T, R>) -> AwgnIter<I, T, R>
     where
         R: rand_core::Rng,
@@ -176,16 +171,20 @@ where
 
 impl<I, T, R> Iterator for AwgnIter<I, T, R>
 where
-    I: Iterator<Item = Complex<T>>,
+    I: Iterator,
+    I::Item: ChannelSample<Float = T>,
     T: Float,
     StandardNormal: Distribution<T>,
     R: rand_core::Rng,
 {
-    type Item = Complex<T>;
+    type Item = I::Item; // <-- Change from Complex<T> to I::Item
+
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        let point = self.iter.next()?;
-        Some(self.channel.apply_point(point))
+        let item = self.iter.next()?;
+        Some(item.map_sample(|pt| self.channel.apply_point(pt)))
     }
+
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
@@ -194,7 +193,8 @@ where
 
 impl<I, T, R> ExactSizeIterator for AwgnIter<I, T, R>
 where
-    I: Iterator<Item = Complex<T>>,
+    I: ExactSizeIterator,
+    I::Item: ChannelSample<Float = T>,
     T: Float,
     StandardNormal: Distribution<T>,
     R: rand_core::Rng,

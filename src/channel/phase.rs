@@ -1,3 +1,4 @@
+use crate::channel::ChannelSample;
 use core::convert::Infallible;
 use num_complex::Complex;
 use num_traits::Float;
@@ -125,18 +126,12 @@ where
     }
 }
 
-pub struct PhaseDistortionIter<I, T, R = NoRng>
-where
-    I: Iterator<Item = Complex<T>>,
-{
+pub struct PhaseDistortionIter<I, T, R = NoRng> {
     iter: I,
     distortion: PhaseDistortion<T, R>,
 }
 
-impl<I, T, R> PhaseDistortionIter<I, T, R>
-where
-    I: Iterator<Item = Complex<T>>,
-{
+impl<I, T, R> PhaseDistortionIter<I, T, R> {
     #[inline]
     pub fn new(iter: I, distortion: PhaseDistortion<T, R>) -> Self {
         Self { iter, distortion }
@@ -145,17 +140,18 @@ where
 
 impl<I, T, R> Iterator for PhaseDistortionIter<I, T, R>
 where
-    I: Iterator<Item = Complex<T>>,
+    I: Iterator,
+    I::Item: ChannelSample<Float = T>,
     T: Float,
     StandardNormal: Distribution<T>,
     R: rand_core::Rng,
 {
-    type Item = Complex<T>;
+    type Item = I::Item; // <-- Change from Complex<T> to I::Item
 
-    #[inline]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        let point = self.iter.next()?;
-        Some(self.distortion.apply_point(point))
+        let item = self.iter.next()?;
+        Some(item.map_sample(|pt| self.distortion.apply_point(pt)))
     }
 
     #[inline]
@@ -166,7 +162,8 @@ where
 
 impl<I, T, R> ExactSizeIterator for PhaseDistortionIter<I, T, R>
 where
-    I: ExactSizeIterator<Item = Complex<T>>,
+    I: ExactSizeIterator,
+    I::Item: ChannelSample<Float = T>,
     T: Float,
     StandardNormal: Distribution<T>,
     R: rand_core::Rng,
@@ -277,7 +274,7 @@ mod tests {
             (channel_hz.step_phasor.im.atan2(channel_hz.step_phasor.re) - expected_step).abs()
                 < EPS_F32,
             "Phase step mismatch: got {}, expected {expected_step}",
-           (channel_hz.step_phasor.im.atan2(channel_hz.step_phasor.re))
+            (channel_hz.step_phasor.im.atan2(channel_hz.step_phasor.re))
         );
     }
 

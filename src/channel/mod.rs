@@ -1,8 +1,14 @@
 pub mod awgn;
-mod multipath;
+pub mod fading;
 pub mod phase;
 
 pub use awgn::{AwgnChannel, AwgnIter};
+pub use fading::{
+    BlockFading, BlockRayleigh, BlockRician, EqualizationPolicy, EqualizeExt, EqualizeIter,
+    EqualizeMmseIter, EqualizeZfIter, FadedSymbol, FadingChannel, FadingCsiIter, FadingExt,
+    FadingIter, FadingModel, FastFading, FastRayleigh, FastRician, Mmse, RayleighChannel,
+    RayleighModel, RicianChannel, RicianModel, ZeroForcing,
+};
 pub use phase::{NoRng, PhaseDistortion, PhaseDistortionIter};
 
 use crate::constellation::{Constellation, ConstellationGeometry, ConstellationState};
@@ -10,12 +16,65 @@ use num_complex::Complex;
 use num_traits::Float;
 use rand_distr::{Distribution, StandardNormal};
 
-pub trait ChannelExt<T>: Iterator<Item = Complex<T>> + Sized {
+// =============================================================================
+// Channel Sample Trait
+// =============================================================================
+
+pub trait ChannelSample {
+    type Float: Float;
+
+    /// Applies a complex transformation to the baseband sample.
+    fn map_sample(self, f: impl FnOnce(Complex<Self::Float>) -> Complex<Self::Float>) -> Self;
+
+    /// Returns a copy of the baseband sample.
+    fn sample(&self) -> Complex<Self::Float>;
+}
+
+impl<T: Float> ChannelSample for Complex<T> {
+    type Float = T;
+
+    #[inline(always)]
+    fn map_sample(self, f: impl FnOnce(Complex<T>) -> Complex<T>) -> Self {
+        f(self)
+    }
+
+    #[inline(always)]
+    fn sample(&self) -> Complex<T> {
+        *self
+    }
+}
+
+impl<T: Float> ChannelSample for FadedSymbol<T> {
+    type Float = T;
+
+    #[inline(always)]
+    fn map_sample(self, f: impl FnOnce(Complex<T>) -> Complex<T>) -> Self {
+        Self {
+            sample: f(self.sample),
+            csi: self.csi,
+        }
+    }
+
+    #[inline(always)]
+    fn sample(&self) -> Complex<T> {
+        self.sample
+    }
+}
+
+// =============================================================================
+// Universal Channel Impairments Trait (Works on Complex<T> AND FadedSymbol<T>)
+// =============================================================================
+
+pub trait ChannelExt<T: Float>: Iterator + Sized
+where
+    Self::Item: ChannelSample<Float = T>,
+{
+    // --- AWGN Injections ---
+
     /// Injects AWGN with a specified total noise variance $\sigma^2 = N_0$.
     #[inline]
     fn add_awgn<R>(self, noise_variance: T, rng: R) -> AwgnIter<Self, T, R>
     where
-        T: Float,
         StandardNormal: Distribution<T>,
         R: rand_core::Rng,
     {
@@ -31,7 +90,6 @@ pub trait ChannelExt<T>: Iterator<Item = Complex<T>> + Sized {
         rng: R,
     ) -> AwgnIter<Self, T, R>
     where
-        T: Float,
         StandardNormal: Distribution<T>,
         R: rand_core::Rng,
     {
@@ -47,7 +105,6 @@ pub trait ChannelExt<T>: Iterator<Item = Complex<T>> + Sized {
         rng: R,
     ) -> AwgnIter<Self, T, R>
     where
-        T: Float,
         StandardNormal: Distribution<T>,
         R: rand_core::Rng,
     {
@@ -58,7 +115,6 @@ pub trait ChannelExt<T>: Iterator<Item = Complex<T>> + Sized {
     #[inline]
     fn add_awgn_snr_with_energy<R>(self, snr_db: T, es: T, rng: R) -> AwgnIter<Self, T, R>
     where
-        T: Float,
         StandardNormal: Distribution<T>,
         R: rand_core::Rng,
     {
@@ -78,7 +134,6 @@ pub trait ChannelExt<T>: Iterator<Item = Complex<T>> + Sized {
         rng: R,
     ) -> AwgnIter<Self, T, R>
     where
-        T: Float,
         StandardNormal: Distribution<T>,
         R: rand_core::Rng,
     {
@@ -88,50 +143,30 @@ pub trait ChannelExt<T>: Iterator<Item = Complex<T>> + Sized {
         )
     }
 
+    // --- Phase & Frequency Distortions ---
+
     /// Injects a constant static phase rotation of $\theta$ radians.
-    ///
-    /// Computes the rotated baseband symbol:
-    /// $$r = s \cdot e^{j\theta}$$
-    ///
-    /// # Parameters
-    /// * `theta`: Static angular rotation in radians.
     #[inline]
     fn add_phase_offset(self, theta: T) -> PhaseDistortionIter<Self, T, NoRng>
     where
-        T: Float,
         StandardNormal: Distribution<T>,
     {
         PhaseDistortionIter::new(self, PhaseDistortion::static_offset(theta))
     }
 
     /// Injects a Carrier Frequency Offset (CFO) of $\Delta\omega$ radians per symbol.
-    ///
-    /// Rotates the $k$-th transmitted symbol according to a linear phase progression:
-    /// $$r[k] = s[k] \cdot e^{j(k \cdot \Delta\omega)}$$
-    ///
-    /// # Parameters
-    /// * `delta_omega`: Normalized frequency offset $\Delta\omega = 2\pi \frac{\Delta f}{f_s}$ in radians/symbol.
     #[inline]
     fn add_cfo(self, delta_omega: T) -> PhaseDistortionIter<Self, T, NoRng>
     where
-        T: Float,
         StandardNormal: Distribution<T>,
     {
         PhaseDistortionIter::new(self, PhaseDistortion::from_cfo(delta_omega))
     }
 
     /// Injects a Carrier Frequency Offset (CFO) specified in Hertz.
-    ///
-    /// Computes the normalized phase step $\Delta\omega = 2\pi \frac{\Delta f}{f_s}$ and applies linear rotation:
-    /// $$r[k] = s[k] \cdot e^{j\left(2\pi \frac{\Delta f}{f_s} k\right)}$$
-    ///
-    /// # Parameters
-    /// * `freq_offset_hz`: Carrier frequency mismatch $\Delta f$ in Hertz.
-    /// * `sample_rate_hz`: Baseband symbol/sampling rate $f_s$ in Hertz.
     #[inline]
     fn add_cfo_hz(self, freq_offset_hz: T, sample_rate_hz: T) -> PhaseDistortionIter<Self, T, NoRng>
     where
-        T: Float,
         StandardNormal: Distribution<T>,
     {
         PhaseDistortionIter::new(
@@ -141,18 +176,9 @@ pub trait ChannelExt<T>: Iterator<Item = Complex<T>> + Sized {
     }
 
     /// Injects Wiener phase noise (random walk phase jitter).
-    ///
-    /// Models oscillator phase instability as discrete Brownian motion:
-    /// $$\theta[k] = \theta[k-1] + \Delta\theta_k, \quad \Delta\theta_k \sim \mathcal{N}(0, \sigma_\phi^2)$$
-    /// $$r[k] = s[k] \cdot e^{j\theta[k]}$$
-    ///
-    /// # Parameters
-    /// * `phase_noise_std`: Standard deviation of the per-symbol phase step $\sigma_\phi$ in radians.
-    /// * `rng`: The PRNG instance used for sampling Gaussian phase increments.
     #[inline]
     fn add_phase_noise<R>(self, phase_noise_std: T, rng: R) -> PhaseDistortionIter<Self, T, R>
     where
-        T: Float,
         StandardNormal: Distribution<T>,
         R: rand_core::Rng,
     {
@@ -160,16 +186,6 @@ pub trait ChannelExt<T>: Iterator<Item = Complex<T>> + Sized {
     }
 
     /// Injects general composite phase distortion combining static phase, CFO, and Wiener noise.
-    ///
-    /// Computes phase progression:
-    /// $$\theta[k] = \theta[k-1] + \Delta\omega + \Delta\theta_k, \quad \theta[0] = \theta_0$$
-    /// $$r[k] = s[k] \cdot e^{j\theta[k]}$$
-    ///
-    /// # Parameters
-    /// * `initial_phase`: Initial phase offset $\theta_0$ in radians.
-    /// * `phase_step`: Frequency offset ramp $\Delta\omega$ in radians/symbol.
-    /// * `phase_noise_std`: Wiener step standard deviation $\sigma_\phi$ in radians.
-    /// * `rng`: The PRNG instance used for sampling Gaussian phase increments.
     #[inline]
     fn add_phase_distortion<R>(
         self,
@@ -179,7 +195,6 @@ pub trait ChannelExt<T>: Iterator<Item = Complex<T>> + Sized {
         rng: R,
     ) -> PhaseDistortionIter<Self, T, R>
     where
-        T: Float,
         StandardNormal: Distribution<T>,
         R: rand_core::Rng,
     {
@@ -190,5 +205,4 @@ pub trait ChannelExt<T>: Iterator<Item = Complex<T>> + Sized {
     }
 }
 
-// Blanket implementation for all complex iterators
-impl<T, I: Iterator<Item = Complex<T>>> ChannelExt<T> for I {}
+impl<T: Float, I: Iterator> ChannelExt<T> for I where I::Item: ChannelSample<Float = T> {}
