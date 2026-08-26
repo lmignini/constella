@@ -1,4 +1,5 @@
 pub mod awgn;
+mod multipath;
 pub mod phase;
 
 pub use awgn::{AwgnChannel, AwgnIter};

@@ -12,6 +12,7 @@ pub mod modulation;
 pub(crate) mod utils;
 
 pub mod channel;
+mod differential;
 
 pub use constellation::{
     Bpsk, Constellation, ConstellationGeometry, ConstellationState, General, Normalized, Psk8,
@@ -39,4 +40,6 @@ pub mod prelude {
     };
     pub use crate::demodulation::DemodulateExt;
     pub use crate::modulation::ModulateExt;
+
+    pub use crate::differential::DifferentialExt;
 }
