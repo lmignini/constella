@@ -21,10 +21,10 @@ macro_rules! impl_direct_modulatable_sizes {
         $(
             impl<T: Copy + Default, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
                 #[inline]
-                pub fn modulate<I: Iterator<Item = u8>>(
-                    self,
+                pub fn modulate<'c, I: Iterator<Item = u8>>(
+                    &'c self,
                     iter: I,
-                ) -> DirectModulationIter<I, T, $m, $k, $n, G, MsbFirst>
+                ) -> DirectModulationIter<'c, I, T, $m, $k, $n, G, MsbFirst>
                 where
                     MsbFirst: DirectBitCodec<$k, $n>,
                 {
@@ -32,15 +32,15 @@ macro_rules! impl_direct_modulatable_sizes {
                 }
 
                 #[inline]
-                pub fn modulate_with<I: Iterator<Item = u8>, O: BitOrder + DirectBitCodec<$k, $n>, P: Padding>(
-                    self,
+                pub fn modulate_with<'c, I: Iterator<Item = u8>, O: BitOrder + DirectBitCodec<$k, $n>, P: Padding>(
+                    &'c self,
                     iter: I,
-                ) -> DirectModulationIter<I, T, $m, $k, $n, G, O> {
+                ) -> DirectModulationIter<'c, I, T, $m, $k, $n, G, O> {
                     DirectModulationIter::with_order(iter, self)
                 }
             }
 
-            impl<I, T, G, O, P> Modulatable<I, T, O, P> for Constellation<T, $m, Normalized, G>
+            impl<'c, I, T, G, O, P> Modulatable<I, T, O, P> for &'c Constellation<T, $m, Normalized, G>
             where
                 I: Iterator<Item = u8>,
                 G: ConstellationGeometry,
@@ -48,7 +48,7 @@ macro_rules! impl_direct_modulatable_sizes {
                 P: Padding,
                 T: Copy + Default,
             {
-                type Output = DirectModulationIter<I, T, $m, $k, $n, G, O>;
+                type Output = DirectModulationIter<'c, I, T, $m, $k, $n, G, O>;
 
                 #[inline]
                 fn modulate(self, iter: I) -> Self::Output {
@@ -68,23 +68,23 @@ macro_rules! impl_fallback_modulatable_sizes {
         $(
             impl<T: Copy, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
                 #[inline]
-                pub fn modulate<I: Iterator<Item = u8>>(
-                    self,
+                pub fn modulate<'c, I: Iterator<Item = u8>>(
+                    &'c self,
                     iter: I,
-                ) -> ModulationIter<I, T, $m, $k, G, MsbFirst, PadZeros> {
+                ) -> ModulationIter<'c, I, T, $m, $k, G, MsbFirst, PadZeros> {
                     ModulationIter::new(iter, self)
                 }
 
                 #[inline]
-                pub fn modulate_with<I: Iterator<Item = u8>, O: BitOrder, P: Padding>(
-                    self,
+                pub fn modulate_with<'c, I: Iterator<Item = u8>, O: BitOrder, P: Padding>(
+                    &'c self,
                     iter: I,
-                ) -> ModulationIter<I, T, $m, $k, G, O, P> {
+                ) -> ModulationIter<'c, I, T, $m, $k, G, O, P> {
                     ModulationIter::with_order_and_padding(iter, self)
                 }
             }
 
-            impl<I, T, G, O, P> Modulatable<I, T, O, P> for Constellation<T, $m, Normalized, G>
+            impl<'c, I, T, G, O, P> Modulatable<I, T, O, P> for &'c Constellation<T, $m, Normalized, G>
             where
                 I: Iterator<Item = u8>,
                 G: ConstellationGeometry,
@@ -92,7 +92,7 @@ macro_rules! impl_fallback_modulatable_sizes {
                 P: Padding,
                 T: Copy,
             {
-                type Output = ModulationIter<I, T, $m, $k, G, O, P>;
+                type Output = ModulationIter<'c, I, T, $m, $k, G, O, P>;
 
                 #[inline]
                 fn modulate(self, iter: I) -> Self::Output {
@@ -147,6 +147,7 @@ pub trait ModulateExt: Iterator<Item = u8> + Sized {
 impl<I: Iterator<Item = u8>> ModulateExt for I {}
 
 pub struct ModulationIter<
+    'c,
     I,
     T,
     const M: usize,
@@ -158,23 +159,23 @@ pub struct ModulationIter<
     G: ConstellationGeometry,
 {
     bit_chunker: BitChunker<I, K, O, P>,
-    constellation: Constellation<T, M, Normalized, G>,
+    constellation: &'c Constellation<T, M, Normalized, G>,
 }
 
-impl<I, T, const M: usize, const K: usize, G: ConstellationGeometry>
-    ModulationIter<I, T, M, K, G, MsbFirst, PadZeros>
+impl<'c, I, T, const M: usize, const K: usize, G: ConstellationGeometry>
+    ModulationIter<'c, I, T, M, K, G, MsbFirst, PadZeros>
 where
     I: Iterator<Item = u8>,
     T: Copy,
 {
     #[inline]
-    pub fn new(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
+    pub fn new(iter: I, constellation: &'c Constellation<T, M, Normalized, G>) -> Self {
         Self::with_order_and_padding(iter, constellation)
     }
 }
 
-impl<I, T, const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder, P: Padding>
-    ModulationIter<I, T, M, K, G, O, P>
+impl<'c, I, T, const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder, P: Padding>
+    ModulationIter<'c, I, T, M, K, G, O, P>
 where
     I: Iterator<Item = u8>,
     T: Copy,
@@ -182,7 +183,7 @@ where
     #[inline]
     pub fn with_order_and_padding(
         iter: I,
-        constellation: Constellation<T, M, Normalized, G>,
+        constellation: &'c Constellation<T, M, Normalized, G>,
     ) -> Self {
         assert_eq!(
             1 << K,
@@ -197,7 +198,8 @@ where
     }
 }
 
-impl<I, T, const M: usize, const K: usize, G, O, P> Iterator for ModulationIter<I, T, M, K, G, O, P>
+impl<'c, I, T, const M: usize, const K: usize, G, O, P> Iterator
+    for ModulationIter<'c, I, T, M, K, G, O, P>
 where
     I: Iterator<Item = u8>,
     G: ConstellationGeometry,
@@ -210,11 +212,17 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let symbol_index = self.bit_chunker.next()?;
-        Some(self.constellation[symbol_index])
+        Some(self.constellation[symbol_index & (M - 1)])   // M is a power of two by construction
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        self.bit_chunker.size_hint()
     }
 }
 
 pub struct DirectModulationIter<
+    'c,
     I,
     T,
     const M: usize,
@@ -229,14 +237,14 @@ pub struct DirectModulationIter<
     O: BitOrder + DirectBitCodec<K, N>,
 {
     iter: I,
-    constellation: Constellation<T, M, Normalized, G>,
+    constellation: &'c Constellation<T, M, Normalized, G>,
     buffer: [Complex<T>; N],
     index: u8,
     _marker: PhantomData<O>,
 }
 
-impl<I, T, const M: usize, const K: usize, const N: usize, G>
-    DirectModulationIter<I, T, M, K, N, G, MsbFirst>
+impl<'c, I, T, const M: usize, const K: usize, const N: usize, G>
+    DirectModulationIter<'c, I, T, M, K, N, G, MsbFirst>
 where
     I: Iterator<Item = u8>,
     G: ConstellationGeometry,
@@ -244,13 +252,13 @@ where
     MsbFirst: DirectBitCodec<K, N>,
 {
     #[inline]
-    pub fn new(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
+    pub fn new(iter: I, constellation: &'c Constellation<T, M, Normalized, G>) -> Self {
         Self::with_order(iter, constellation)
     }
 }
 
-impl<I, T, const M: usize, const K: usize, const N: usize, G, O>
-    DirectModulationIter<I, T, M, K, N, G, O>
+impl<'c, I, T, const M: usize, const K: usize, const N: usize, G, O>
+    DirectModulationIter<'c, I, T, M, K, N, G, O>
 where
     I: Iterator<Item = u8>,
     G: ConstellationGeometry,
@@ -258,7 +266,7 @@ where
     O: BitOrder + DirectBitCodec<K, N>,
 {
     #[inline]
-    pub fn with_order(iter: I, constellation: Constellation<T, M, Normalized, G>) -> Self {
+    pub fn with_order(iter: I, constellation: &'c Constellation<T, M, Normalized, G>) -> Self {
         assert_eq!(1 << K, M, "Constellation size M ({M}) must equal 2^K");
         assert_eq!(K * N, 8, "K * N must equal 8 bits per byte");
         Self {
@@ -271,8 +279,8 @@ where
     }
 }
 
-impl<I, T, const M: usize, const K: usize, const N: usize, G, O> Iterator
-    for DirectModulationIter<I, T, M, K, N, G, O>
+impl<'c, I, T, const M: usize, const K: usize, const N: usize, G, O> Iterator
+    for DirectModulationIter<'c, I, T, M, K, N, G, O>
 where
     I: Iterator<Item = u8>,
     G: ConstellationGeometry,
@@ -315,8 +323,8 @@ where
 }
 
 // Empty ExactSizeIterator implementation
-impl<I, T, const M: usize, const K: usize, const N: usize, G, O> ExactSizeIterator
-    for DirectModulationIter<I, T, M, K, N, G, O>
+impl<'c, I, T, const M: usize, const K: usize, const N: usize, G, O> ExactSizeIterator
+    for DirectModulationIter<'c, I, T, M, K, N, G, O>
 where
     I: ExactSizeIterator<Item = u8>,
     G: ConstellationGeometry,
@@ -328,8 +336,10 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Qam64;
     use crate::bits::{DiscardRemainder, LsbFirst};
     use crate::constellation::{Bpsk, Psk8, Qam16, Qpsk};
+    use alloc::vec;
     use alloc::vec::Vec;
 
     const EPS_F32: f32 = 1e-6;
@@ -341,7 +351,7 @@ mod tests {
     #[test]
     fn test_bpsk_stream_modulation() {
         let data = [0b10110000]; // 8 BPSK symbols
-        let symbols: Vec<Complex<f32>> = data.into_iter().modulate(Bpsk::<f32>::BPSK).collect();
+        let symbols: Vec<Complex<f32>> = data.into_iter().modulate(&Bpsk::<f32>::BPSK).collect();
 
         assert_eq!(symbols.len(), 8);
         let bpsk = Bpsk::<f32>::BPSK;
@@ -373,7 +383,7 @@ mod tests {
     fn test_qam16_modulation() {
         let data = [0xA5]; // 0b1010_0101 -> 0xA (10), 0x5 (5)
         let qam16 = Qam16::<f32>::QAM16;
-        let symbols: Vec<Complex<f32>> = data.into_iter().modulate(qam16).collect();
+        let symbols: Vec<Complex<f32>> = data.into_iter().modulate(&qam16).collect();
 
         assert_eq!(symbols.len(), 2);
         assert!(approx_eq_c32(symbols[0], qam16[0xA]));
@@ -388,7 +398,7 @@ mod tests {
 
         let symbols: Vec<Complex<f32>> = data
             .into_iter()
-            .modulate_with::<_, f32, LsbFirst, DiscardRemainder>(psk8)
+            .modulate_with::<_, f32, LsbFirst, DiscardRemainder>(&psk8)
             .collect();
 
         assert_eq!(symbols.len(), 2);
@@ -399,7 +409,7 @@ mod tests {
     #[test]
     fn test_empty_stream_modulation() {
         let data: [u8; 0] = [];
-        let mut iter = data.into_iter().modulate(Qpsk::<f32>::QPSK);
+        let mut iter = data.into_iter().modulate(&Qpsk::<f32>::QPSK);
         assert_eq!(iter.next(), None);
     }
 
@@ -411,9 +421,16 @@ mod tests {
 
         let symbols: Vec<_> = data
             .into_iter()
-            .modulate_with::<_, f32, MsbFirst, DiscardRemainder>(psk8)
+            .modulate_with::<_, f32, MsbFirst, DiscardRemainder>(&psk8)
             .collect();
 
         assert_eq!(symbols.len(), 5);
+    }
+
+    #[test]
+    fn fallback_modulation_reports_size_hint() {
+        let data = vec![0xAAu8; 300]; // 2400 bits, K=6 -> 400 symbols
+        let it = data.into_iter().modulate(&Qam64::<f32>::QAM64);
+        assert_eq!(it.size_hint(), (400, Some(400)));
     }
 }

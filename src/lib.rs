@@ -12,11 +12,11 @@ pub mod modulation;
 pub(crate) mod utils;
 
 pub mod channel;
-mod differential;
+pub mod differential;
 
 pub use constellation::{
     Bpsk, Constellation, ConstellationGeometry, ConstellationState, General, Normalized, Psk8,
-    Qam16, Qam64, Qam256, Qam1024, Qam4096, Qpsk, SquareQam, Unnormalized,
+    Qam16, Qam64, Qam256, Qam1024, Qam4096, Qpsk, RotatedPsk, SquareQam, StandardPsk, Unnormalized,
 };
 
 pub use demodulation::DemodulateExt;
@@ -36,7 +36,7 @@ pub mod prelude {
     };
     pub use crate::constellation::{
         Bpsk, Constellation, General, Normalized, Psk8, Qam16, Qam64, Qam256, Qam1024, Qam4096,
-        Qpsk, SquareQam, Unnormalized,
+        Qpsk, SquareQam, Unnormalized, RotatedPsk, StandardPsk
     };
     pub use crate::demodulation::DemodulateExt;
     pub use crate::modulation::ModulateExt;

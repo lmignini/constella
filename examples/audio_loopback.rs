@@ -64,12 +64,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         let recovered_bytes: Vec<u8> = pcm_bytes
             .into_iter()
-            .modulate(constellation)
+            .modulate(&constellation)
             .differential_encode()
             .add_phase_offset(PI / 2.0)
             .add_awgn_snr(&constellation, snr_db, &mut rng_awgn)
             .differential_decode() // Channel rotates phase, NO EQUALIZER
-            .demodulate_hard(constellation)
+            .demodulate_hard(&constellation)
             .collect();
 
         // Push mono samples to ring buffer

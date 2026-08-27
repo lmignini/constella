@@ -9,8 +9,8 @@ fn test_all_standard_constellations_roundtrip() {
         payload
             .iter()
             .copied()
-            .modulate(Bpsk::<f32>::BPSK)
-            .demodulate_hard(Bpsk::<f32>::BPSK)
+            .modulate(&Bpsk::<f32>::BPSK)
+            .demodulate_hard(&Bpsk::<f32>::BPSK)
             .collect::<Vec<_>>(),
         payload
     );
@@ -20,8 +20,8 @@ fn test_all_standard_constellations_roundtrip() {
         payload
             .iter()
             .copied()
-            .modulate(Qpsk::<f32>::QPSK)
-            .demodulate_hard(Qpsk::<f32>::QPSK)
+            .modulate(&Qpsk::<f32>::QPSK)
+            .demodulate_hard(&Qpsk::<f32>::QPSK)
             .collect::<Vec<_>>(),
         payload
     );
@@ -31,8 +31,8 @@ fn test_all_standard_constellations_roundtrip() {
         payload
             .iter()
             .copied()
-            .modulate(Qam16::<f32>::QAM16)
-            .demodulate_hard(Qam16::<f32>::QAM16)
+            .modulate(&Qam16::<f32>::QAM16)
+            .demodulate_hard(&Qam16::<f32>::QAM16)
             .collect::<Vec<_>>(),
         payload
     );

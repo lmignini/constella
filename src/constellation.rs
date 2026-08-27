@@ -1,5 +1,4 @@
 use crate::bits::BitOrder;
-use crate::bits::MsbFirst;
 use crate::utils::{binary_to_gray, gives_square_constellation, is_valid_constellation_size};
 use core::marker::PhantomData;
 use num_complex::Complex;
@@ -51,6 +50,8 @@ pub type Bpsk<T = f32, S = Normalized> = Constellation<T, 2, S, StandardPsk>;
 pub type Qpsk<T = f32, S = Normalized> = Constellation<T, 4, S, StandardPsk>;
 pub type Psk8<T = f32, S = Normalized> = Constellation<T, 8, S, StandardPsk>;
 
+pub type Qam4<T = f32, S = Normalized> = Constellation<T, 4, S, SquareQam<T>>;
+
 pub type Qam16<T = f32, S = Normalized> = Constellation<T, 16, S, SquareQam<T>>;
 pub type Qam64<T = f32, S = Normalized> = Constellation<T, 64, S, SquareQam<T>>;
 pub type Qam256<T = f32, S = Normalized> = Constellation<T, 256, S, SquareQam<T>>;
@@ -59,7 +60,6 @@ pub type Qam4096<T = f32, S = Normalized> = Constellation<T, 4096, S, SquareQam<
 
 /// A digital modulation constellation of size `M` using scalar precision `T`.
 #[derive(Debug, Clone, Copy, PartialEq)]
-#[repr(Rust)]
 pub struct Constellation<T, const M: usize, S = Normalized, G = General>
 where
     S: ConstellationState,
@@ -243,15 +243,12 @@ macro_rules! impl_constellation_float {
                     let sector_width = two_pi / (M as $ty);
                     let half_sector = sector_width / 2.0;
 
-                    let phi = Float::atan2(point.im, point.re);
-                    let mut aligned = phi - self.geometry.phase_offset + half_sector;
-
+                    let p_rot = point * self.geometry.derot;
+                    let phi = Float::atan2(p_rot.im, p_rot.re); // now provably in (-pi, pi]
+                    let mut aligned = phi + half_sector; // in (-pi + half, pi + half]
                     if aligned < 0.0 {
                         aligned += two_pi;
-                    } else if aligned >= two_pi {
-                        aligned -= two_pi;
-                    }
-
+                    } // single wrap is now sufficient
                     let sector_idx = ((aligned / sector_width) as usize) % M;
                     binary_to_gray(sector_idx)
                 }
@@ -306,7 +303,7 @@ macro_rules! impl_constellation_float {
         // --- Soft Demodulation for Any Geometry ---
         impl<const M: usize, G: ConstellationGeometry> Constellation<$ty, M, Normalized, G> {
             #[inline]
-            pub fn demodulate_soft_point<const K: usize, O: BitOrder + 'static>(
+            pub fn demodulate_soft_point<const K: usize, O: BitOrder>(
                 &self,
                 point: Complex<$ty>,
                 noise_var: $ty,
@@ -321,7 +318,7 @@ macro_rules! impl_constellation_float {
                 }
 
                 let mut llrs = [0.0 as $ty; K];
-                let scale = (1.0 as $ty) / (2.0 * noise_var);
+                let scale = (1.0 as $ty) / (noise_var);
 
                 let mut j = 0;
                 while j < K {
@@ -330,9 +327,7 @@ macro_rules! impl_constellation_float {
                     let mut idx = 0;
                     while idx < M {
                         let d = dists[idx];
-                        let bit = if core::any::TypeId::of::<O>()
-                            == core::any::TypeId::of::<MsbFirst>()
-                        {
+                        let bit = if O::IS_MSB_FIRST {
                             (idx >> (K - 1 - j)) & 1
                         } else {
                             (idx >> j) & 1
@@ -402,7 +397,7 @@ macro_rules! impl_constellation_float {
                 } else if M == 4 {
                     (core::$ty::consts::PI / 4.0) - phase_offset
                 } else {
-                    0.0 as $ty
+                    -phase_offset
                 };
 
                 let derot = Self::from_polar(1.0 as $ty, derot_angle);
@@ -516,6 +511,7 @@ impl_qam_consts!(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::MsbFirst;
 
     const EPS_F32: f32 = 1e-6;
     const EPS_F64: f64 = 1e-12;
@@ -689,5 +685,35 @@ mod tests {
         for &llr in &llrs15 {
             assert!(llr < 0.0, "Expected negative LLR for bit 1, got {llr}");
         }
+    }
+
+    #[test]
+    fn rotated_psk_roundtrip_across_full_phase_range() {
+        // sweep offsets across [0, 2pi) including the > pi region that is currently broken
+        for step in 0..32 {
+            let offset = (step as f32) * (2.0 * core::f32::consts::PI / 32.0);
+            let c = Constellation::<f32, 8, Normalized, RotatedPsk<f32>>::m_psk_with_phase(offset);
+            for idx in 0..8 {
+                assert_eq!(
+                    c.demodulate_hard_point(c[idx]),
+                    idx,
+                    "offset={offset} idx={idx}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bpsk_llr_matches_closed_form() {
+        // Unit-energy BPSK: points at +1 and -1. Exact LLR = 4*r_re/N0.
+        let bpsk = Bpsk::<f64>::BPSK;
+        let n0 = 0.4_f64;
+        let r = Complex::new(0.3_f64, 0.0);
+        let llr = bpsk.demodulate_soft_point::<1, MsbFirst>(r, n0)[0];
+        let expected = 4.0 * r.re / n0;
+        assert!(
+            (llr - expected).abs() < 1e-12,
+            "got {llr}, expected {expected}"
+        );
     }
 }

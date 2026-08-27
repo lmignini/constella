@@ -10,6 +10,7 @@ pub struct MsbFirst;
 pub struct LsbFirst;
 
 pub trait BitOrder {
+    const IS_MSB_FIRST: bool;
     // Functions used in BitChunker
     fn push_byte(buffer: &mut u64, count: &mut u8, byte: u8);
     fn extract_chunk<const K: usize>(buffer: &mut u64, count: &mut u8) -> usize;
@@ -21,27 +22,22 @@ pub trait BitOrder {
 }
 
 impl BitOrder for MsbFirst {
+    const IS_MSB_FIRST: bool = true;
+    #[inline]
     fn push_byte(buffer: &mut u64, count: &mut u8, byte: u8) {
-        // Make space for 8 new bits (byte) in the buffer
-        // The old bits (that should be extracted first move up the buffer, aka to the left)
         *buffer <<= 8;
-        // Copy byte into the newly created spaces
         *buffer |= byte as u64;
-        // Increment count by number of bits copied into buffer
         *count += 8;
     }
-
+    #[inline]
     fn extract_chunk<const K: usize>(buffer: &mut u64, count: &mut u8) -> usize {
-        // Extract the K leftmost (MSB) bits
         let mask_for_bits_to_extract = (1u64 << K) - 1;
         *count -= K as u8;
         let chunk = (*buffer >> *count) & mask_for_bits_to_extract;
-
-        *buffer &= (1u64 << *count) - 1; // Keep only remaining valid bits
-
+        *buffer &= (1u64 << *count) - 1;
         chunk as usize
     }
-
+    #[inline]
     fn finalize_pad_zeros<const K: usize>(buffer: &mut u64, count: &mut u8) -> usize {
         let missing_bits = K as u8 - *count;
         let chunk = (*buffer << missing_bits) & ((1u64 << K) - 1);
@@ -49,54 +45,50 @@ impl BitOrder for MsbFirst {
         *count = 0;
         chunk as usize
     }
-
+    #[inline]
     fn extract_byte(buffer: &mut u64, count: &mut u8) -> u8 {
         *count -= 8;
         let byte = ((*buffer >> *count) & 0xFF) as u8;
         *buffer &= (1u64 << *count) - 1;
         byte
     }
-
+    #[inline]
     fn push_chunk<const K: usize>(buffer: &mut u64, count: &mut u8, chunk: usize) {
         *buffer <<= K;
         *buffer |= (chunk as u64) & ((1u64 << K) - 1);
         *count += K as u8;
     }
 }
+
 impl BitOrder for LsbFirst {
+    const IS_MSB_FIRST: bool = false;
     fn push_byte(buffer: &mut u64, count: &mut u8, byte: u8) {
-        // Skip the first count bits (from the right) and copy byte into buffer
         *buffer |= (byte as u64) << *count;
-        // Increment count by number of bits copied into buffer
         *count += 8;
     }
-
+    #[inline]
     fn extract_chunk<const K: usize>(buffer: &mut u64, count: &mut u8) -> usize {
-        // Extract the K rightmost (LSB) bits
         let mask_for_bits_to_extract = (1u64 << K) - 1;
         let chunk = *buffer & mask_for_bits_to_extract;
-        // Shift the buffer right to remove the extracted bits
         *buffer >>= K;
         *count -= K as u8;
-
         chunk as usize
     }
-
+    #[inline]
     fn finalize_pad_zeros<const K: usize>(buffer: &mut u64, count: &mut u8) -> usize {
         let chunk = *buffer & ((1u64 << K) - 1);
         *buffer = 0;
         *count = 0;
         chunk as usize
     }
-
+    #[inline]
     fn extract_byte(buffer: &mut u64, count: &mut u8) -> u8 {
         let byte = (*buffer & 0xFF) as u8;
         *buffer >>= 8;
         *count -= 8;
-
         byte
     }
-
+    #[inline]
     fn push_chunk<const K: usize>(buffer: &mut u64, count: &mut u8, chunk: usize) {
         let mask = (1u64 << K) - 1;
         *buffer |= ((chunk as u64) & mask) << *count;
@@ -105,14 +97,10 @@ impl BitOrder for LsbFirst {
 }
 
 // =============================================================================
-// K = 1, N = 8 (BPSK)
+// Direct Bit Codecs
 // =============================================================================
 
-/// Direct 1-bit (BPSK) codec in MSB-first bit order.
-///
-/// Maps bits 7 down to 0 sequentially to symbol indices 0 through 7.
 impl DirectBitCodec<1, 8> for MsbFirst {
-    /// Unpacks a byte into eight 1-bit symbol indices from MSB (`bit 7`) to LSB (`bit 0`).
     #[inline]
     fn unpack_byte(byte: u8) -> [usize; 8] {
         [
@@ -127,7 +115,6 @@ impl DirectBitCodec<1, 8> for MsbFirst {
         ]
     }
 
-    /// Packs eight 1-bit symbol indices into a single byte with `symbols[0]` at `bit 7`.
     #[inline]
     fn pack_symbols(symbols: [usize; 8]) -> u8 {
         (((symbols[0] & 1) << 7)
@@ -141,11 +128,7 @@ impl DirectBitCodec<1, 8> for MsbFirst {
     }
 }
 
-/// Direct 1-bit (BPSK) codec in LSB-first bit order.
-///
-/// Maps bits 0 up to 7 sequentially to symbol indices 0 through 7.
 impl DirectBitCodec<1, 8> for LsbFirst {
-    /// Unpacks a byte into eight 1-bit symbol indices from LSB (`bit 0`) to MSB (`bit 7`).
     #[inline]
     fn unpack_byte(byte: u8) -> [usize; 8] {
         [
@@ -160,7 +143,6 @@ impl DirectBitCodec<1, 8> for LsbFirst {
         ]
     }
 
-    /// Packs eight 1-bit symbol indices into a single byte with `symbols[0]` at `bit 0`.
     #[inline]
     fn pack_symbols(symbols: [usize; 8]) -> u8 {
         ((symbols[0] & 1)
@@ -174,15 +156,7 @@ impl DirectBitCodec<1, 8> for LsbFirst {
     }
 }
 
-// =============================================================================
-// K = 2, N = 4 (QPSK / 4-QAM)
-// =============================================================================
-
-/// Direct 2-bit (QPSK / 4-QAM) codec in MSB-first bit order.
-///
-/// Maps 2-bit dibits `bits 7..6`, `5..4`, `3..2`, and `1..0` to symbol indices 0 through 3.
 impl DirectBitCodec<2, 4> for MsbFirst {
-    /// Unpacks a byte into four 2-bit symbol indices in MSB-to-LSB order.
     #[inline]
     fn unpack_byte(byte: u8) -> [usize; 4] {
         [
@@ -193,7 +167,6 @@ impl DirectBitCodec<2, 4> for MsbFirst {
         ]
     }
 
-    /// Packs four 2-bit symbol indices into a single byte with `symbols[0]` as the most significant dibit.
     #[inline]
     fn pack_symbols(symbols: [usize; 4]) -> u8 {
         (((symbols[0] & 0x03) << 6)
@@ -203,11 +176,7 @@ impl DirectBitCodec<2, 4> for MsbFirst {
     }
 }
 
-/// Direct 2-bit (QPSK / 4-QAM) codec in LSB-first bit order.
-///
-/// Maps 2-bit dibits `bits 1..0`, `3..2`, `5..4`, and `7..6` to symbol indices 0 through 3.
 impl DirectBitCodec<2, 4> for LsbFirst {
-    /// Unpacks a byte into four 2-bit symbol indices in LSB-to-MSB order.
     #[inline]
     fn unpack_byte(byte: u8) -> [usize; 4] {
         [
@@ -218,7 +187,6 @@ impl DirectBitCodec<2, 4> for LsbFirst {
         ]
     }
 
-    /// Packs four 2-bit symbol indices into a single byte with `symbols[0]` as the least significant dibit.
     #[inline]
     fn pack_symbols(symbols: [usize; 4]) -> u8 {
         ((symbols[0] & 0x03)
@@ -228,81 +196,54 @@ impl DirectBitCodec<2, 4> for LsbFirst {
     }
 }
 
-// =============================================================================
-// K = 4, N = 2 (16-QAM / 16-PSK)
-// =============================================================================
-
-/// Direct 4-bit (16-QAM / 16-PSK) codec in MSB-first bit order.
-///
-/// Maps the high nibble (`bits 7..4`) to symbol index 0 and the low nibble (`bits 3..0`) to symbol index 1.
 impl DirectBitCodec<4, 2> for MsbFirst {
-    /// Unpacks a byte into two 4-bit symbol indices in `[MSB_nibble, LSB_nibble]` order.
     #[inline]
     fn unpack_byte(byte: u8) -> [usize; 2] {
         [((byte >> 4) & 0x0F) as usize, (byte & 0x0F) as usize]
     }
 
-    /// Packs two 4-bit symbol indices into a single byte using `(sym0 << 4) | sym1`.
     #[inline]
     fn pack_symbols(symbols: [usize; 2]) -> u8 {
         (((symbols[0] & 0x0F) << 4) | (symbols[1] & 0x0F)) as u8
     }
 }
 
-/// Direct 4-bit (16-QAM / 16-PSK) codec in LSB-first bit order.
-///
-/// Maps the low nibble (`bits 3..0`) to symbol index 0 and the high nibble (`bits 7..4`) to symbol index 1.
 impl DirectBitCodec<4, 2> for LsbFirst {
-    /// Unpacks a byte into two 4-bit symbol indices in `[LSB_nibble, MSB_nibble]` order.
     #[inline]
     fn unpack_byte(byte: u8) -> [usize; 2] {
         [(byte & 0x0F) as usize, ((byte >> 4) & 0x0F) as usize]
     }
 
-    /// Packs two 4-bit symbol indices into a single byte using `(sym1 << 4) | sym0`.
     #[inline]
     fn pack_symbols(symbols: [usize; 2]) -> u8 {
         (((symbols[1] & 0x0F) << 4) | (symbols[0] & 0x0F)) as u8
     }
 }
 
-// =============================================================================
-// K = 8, N = 1 (256-QAM / 256-PSK)
-// =============================================================================
-
-/// Direct 8-bit (256-QAM / 256-PSK) codec in MSB-first bit order.
-///
-/// Directly maps a full byte to a single 8-bit symbol index with zero bit manipulation.
 impl DirectBitCodec<8, 1> for MsbFirst {
-    /// Unpacks a single byte into a 1-element array containing the symbol index.
     #[inline]
     fn unpack_byte(byte: u8) -> [usize; 1] {
         [byte as usize]
     }
 
-    /// Packs a single 8-bit symbol index into a byte.
     #[inline]
     fn pack_symbols(symbols: [usize; 1]) -> u8 {
         symbols[0] as u8
     }
 }
 
-/// Direct 8-bit (256-QAM / 256-PSK) codec in LSB-first bit order.
-///
-/// Directly maps a full byte to a single 8-bit symbol index with zero bit manipulation.
 impl DirectBitCodec<8, 1> for LsbFirst {
-    /// Unpacks a single byte into a 1-element array containing the symbol index.
     #[inline]
     fn unpack_byte(byte: u8) -> [usize; 1] {
         [byte as usize]
     }
 
-    /// Packs a single 8-bit symbol index into a byte.
     #[inline]
     fn pack_symbols(symbols: [usize; 1]) -> u8 {
         symbols[0] as u8
     }
 }
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct PadZeros;
 
@@ -314,6 +255,11 @@ pub struct ExactOnly;
 
 pub trait Padding {
     fn finalize<const K: usize, O: BitOrder>(buffer: &mut u64, count: &mut u8) -> Option<usize>;
+
+    #[inline]
+    fn pad_extra_symbol(_rem_bits: usize) -> usize {
+        0
+    }
 }
 
 impl Padding for PadZeros {
@@ -324,14 +270,26 @@ impl Padding for PadZeros {
             Some(O::finalize_pad_zeros::<K>(buffer, count))
         }
     }
+
+    #[inline]
+    fn pad_extra_symbol(rem_bits: usize) -> usize {
+        if rem_bits > 0 { 1 } else { 0 }
+    }
 }
+
 impl Padding for DiscardRemainder {
     fn finalize<const K: usize, O: BitOrder>(buffer: &mut u64, count: &mut u8) -> Option<usize> {
         *buffer = 0;
         *count = 0;
         None
     }
+
+    #[inline]
+    fn pad_extra_symbol(_rem_bits: usize) -> usize {
+        0
+    }
 }
+
 impl Padding for ExactOnly {
     fn finalize<const K: usize, O: BitOrder>(_buffer: &mut u64, count: &mut u8) -> Option<usize> {
         if *count == 0 {
@@ -343,23 +301,14 @@ impl Padding for ExactOnly {
             );
         }
     }
+
+    #[inline]
+    fn pad_extra_symbol(_rem_bits: usize) -> usize {
+        0
+    }
 }
 
 /// A zero-allocation streaming iterator that chunks a stream of bytes into $K$-bit symbol indices.
-///
-/// `BitChunker` continuously consumes bytes from an underlying [`Iterator<Item = u8>`], accumulates
-/// them in an internal stack-allocated register, and extracts chunks of exactly `K` bits for modulation.
-///
-/// # Type Parameters
-///
-/// * `I`: The underlying byte iterator source.
-/// * `K`: The number of bits per symbol ($\log_2 M$, where $M$ is the constellation size).
-/// * `O`: The bit endianness strategy ([`MsbFirst`] or [`LsbFirst`]). Defaults to [`MsbFirst`].
-/// * `P`: The end-of-stream padding policy ([`PadZeros`], [`DiscardRemainder`] and [`ExactOnly`]). Defaults to [`PadZeros`].
-///
-/// # Panics
-///
-/// * Panics at construction if `K == 0` or `K > 56` (exceeds internal buffer ingestion headroom).
 pub struct BitChunker<I, const K: usize, O = MsbFirst, P = PadZeros> {
     iter: I,
     bit_buffer: u64,
@@ -371,11 +320,6 @@ impl<I, const K: usize> BitChunker<I, K, MsbFirst, PadZeros>
 where
     I: Iterator<Item = u8>,
 {
-    /// Creates a new `BitChunker` with default [`MsbFirst`] bit ordering and [`PadZeros`] padding.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `K == 0` or `K > 56`.
     pub fn new(iter: I) -> Self {
         Self::with_order_and_padding(iter)
     }
@@ -385,11 +329,6 @@ impl<I, const K: usize, O: BitOrder, P: Padding> BitChunker<I, K, O, P>
 where
     I: Iterator<Item = u8>,
 {
-    /// Creates a new `BitChunker` with provided bit ordering and padding.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `K == 0` or `K > 56`.
     pub fn with_order_and_padding(iter: I) -> Self {
         assert!(
             K > 0 && K <= 56,
@@ -412,7 +351,6 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        // 1. Pull bytes until we have enough bits for at least one K-bit chunk
         while self.bits_in_buffer < K as u8 {
             match self.iter.next() {
                 Some(byte) => O::push_byte(&mut self.bit_buffer, &mut self.bits_in_buffer, byte),
@@ -420,16 +358,30 @@ where
             }
         }
 
-        // 2. If enough bits exist, extract and return a full symbol
         if self.bits_in_buffer >= K as u8 {
             Some(O::extract_chunk::<K>(
                 &mut self.bit_buffer,
                 &mut self.bits_in_buffer,
             ))
         } else {
-            // 3. Otherwise, delegate leftover bits to the padding strategy
             P::finalize::<K, O>(&mut self.bit_buffer, &mut self.bits_in_buffer)
         }
+    }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lower, upper) = self.iter.size_hint();
+        let buffered = self.bits_in_buffer as usize;
+
+        let lower_bits = lower.saturating_mul(8).saturating_add(buffered);
+        let lower_symbols = lower_bits / K + P::pad_extra_symbol(lower_bits % K);
+
+        let upper_symbols = upper.and_then(|u| {
+            let upper_bits = u.checked_mul(8)?.checked_add(buffered)?;
+            Some(upper_bits / K + P::pad_extra_symbol(upper_bits % K))
+        });
+
+        (lower_symbols, upper_symbols)
     }
 }
 
@@ -444,11 +396,6 @@ impl<I, const K: usize> BitPacker<I, K, MsbFirst>
 where
     I: Iterator<Item = usize>,
 {
-    /// Creates a new `BitPacker` with default [`MsbFirst`] bit ordering.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `K == 0` or `K > 56`.
     pub fn new(iter: I) -> Self {
         Self::with_order(iter)
     }
@@ -458,11 +405,6 @@ impl<I, const K: usize, O: BitOrder> BitPacker<I, K, O>
 where
     I: Iterator<Item = usize>,
 {
-    /// Creates a new `BitPacker` with provided bit ordering.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `K == 0` or `K > 56`.
     pub fn with_order(iter: I) -> Self {
         assert!(
             K > 0 && K <= 56,
@@ -485,7 +427,6 @@ where
 
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
-        // 1. Pull chunks until we have enough bits for at least one byte
         while self.bits_in_buffer < 8 {
             match self.iter.next() {
                 Some(chunk) => {
@@ -495,53 +436,58 @@ where
             }
         }
 
-        // 2. If enough bits exist, extract and return a full byte
         if self.bits_in_buffer >= 8 {
             Some(O::extract_byte(
                 &mut self.bit_buffer,
                 &mut self.bits_in_buffer,
             ))
         } else {
-            // 3. Otherwise, drop trailing padding bits
             None
         }
     }
+
+    #[inline]
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        let (lower, upper) = self.iter.size_hint();
+        let buffered = self.bits_in_buffer as usize;
+
+        let lower_bits = lower.saturating_mul(K).saturating_add(buffered);
+        let lower_bytes = lower_bits / 8;
+
+        let upper_bytes = upper.and_then(|u| {
+            let upper_bits = u.checked_mul(K)?.checked_add(buffered)?;
+            Some(upper_bits / 8)
+        });
+
+        (lower_bytes, upper_bytes)
+    }
 }
 
-/// Extension trait providing fluent `.pack_bits(...)` syntax directly on symbol iterators.
 pub trait ChunkBitsExt: Iterator<Item = u8> + Sized {
-    /// Packs an iterator of $K$-bit symbol indices into `u8` bytes using default [`MsbFirst`] ordering.
     #[inline]
     fn chunk_bits<const K: usize>(self) -> BitChunker<Self, K, MsbFirst> {
         BitChunker::new(self)
     }
 
-    /// Packs an iterator of $K$-bit symbol indices into `u8` bytes using explicit [`BitOrder`].
     #[inline]
-    fn chunk_bits_with<const K: usize, O: BitOrder, P: Padding>(self) -> BitChunker<Self, K, O> {
+    fn chunk_bits_with<const K: usize, O: BitOrder, P: Padding>(self) -> BitChunker<Self, K, O, P> {
         BitChunker::with_order_and_padding(self)
     }
 }
 
-// Blanket implementation for all symbol index iterators
-impl<I: Iterator<Item = usize>> PackBitsExt for I {}
-
-/// Extension trait providing fluent `.pack_bits(...)` syntax directly on symbol iterators.
 pub trait PackBitsExt: Iterator<Item = usize> + Sized {
-    /// Packs an iterator of $K$-bit symbol indices into `u8` bytes using default [`MsbFirst`] ordering.
     #[inline]
     fn pack_bits<const K: usize>(self) -> BitPacker<Self, K, MsbFirst> {
         BitPacker::new(self)
     }
 
-    /// Packs an iterator of $K$-bit symbol indices into `u8` bytes using explicit [`BitOrder`].
     #[inline]
     fn pack_bits_with<const K: usize, O: BitOrder>(self) -> BitPacker<Self, K, O> {
         BitPacker::with_order(self)
     }
 }
 
-// Blanket implementation for all byte iterators
+impl<I: Iterator<Item = usize>> PackBitsExt for I {}
 impl<I: Iterator<Item = u8>> ChunkBitsExt for I {}
 
 #[cfg(test)]
@@ -550,17 +496,35 @@ mod tests {
     use alloc::vec;
     use alloc::vec::Vec;
 
-    // --- Standard Aligned Slicing (K = 1, 2, 4) ---
+    #[test]
+    fn test_bitchunker_size_hint() {
+        let data = vec![0xAAu8; 10]; // 80 bits
+
+        // K=3 with PadZeros: 80 / 3 = 26 full + 2 rem -> 27 symbols
+        let chunker_pad = BitChunker::<_, 3, MsbFirst, PadZeros>::new(data.clone().into_iter());
+        assert_eq!(chunker_pad.size_hint(), (27, Some(27)));
+
+        // K=3 with DiscardRemainder: 80 / 3 = 26 symbols
+        let chunker_discard =
+            BitChunker::<_, 3, MsbFirst, DiscardRemainder>::with_order_and_padding(
+                data.clone().into_iter(),
+            );
+        assert_eq!(chunker_discard.size_hint(), (26, Some(26)));
+    }
+
+    #[test]
+    fn test_bitpacker_size_hint() {
+        let symbols = vec![0usize; 27]; // 27 symbols with K=3 -> 81 bits -> 10 bytes
+        let packer = BitPacker::<_, 3, MsbFirst>::new(symbols.into_iter());
+        assert_eq!(packer.size_hint(), (10, Some(10)));
+    }
 
     #[test]
     fn test_bpsk_k1_msb_and_lsb() {
-        let data = [0b10110001]; // b7..b0
-
-        // MsbFirst: reads bits 7 down to 0[cite: 10]
+        let data = [0b10110001];
         let msb: Vec<usize> = BitChunker::<_, 1, MsbFirst>::new(data.into_iter()).collect();
         assert_eq!(msb, vec![1, 0, 1, 1, 0, 0, 0, 1]);
 
-        // LsbFirst: reads bits 0 up to 7[cite: 10]
         let lsb: Vec<usize> =
             BitChunker::<_, 1, LsbFirst>::with_order_and_padding(data.into_iter()).collect();
         assert_eq!(lsb, vec![1, 0, 0, 0, 1, 1, 0, 1]);
@@ -569,12 +533,9 @@ mod tests {
     #[test]
     fn test_qpsk_k2_msb_and_lsb() {
         let data = [0b11_01_00_10];
-
-        // MsbFirst: [11, 01, 00, 10] -> [3, 1, 0, 2][cite: 10]
         let msb: Vec<usize> = BitChunker::<_, 2, MsbFirst>::new(data.into_iter()).collect();
         assert_eq!(msb, vec![3, 1, 0, 2]);
 
-        // LsbFirst: [10, 00, 01, 11] -> [2, 0, 1, 3][cite: 10]
         let lsb: Vec<usize> =
             BitChunker::<_, 2, LsbFirst>::with_order_and_padding(data.into_iter()).collect();
         assert_eq!(lsb, vec![2, 0, 1, 3]);
@@ -582,8 +543,7 @@ mod tests {
 
     #[test]
     fn test_qam16_k4_msb_and_lsb() {
-        let data = [0xA5, 0x3C]; // [0b1010_0101, 0b0011_1100]
-
+        let data = [0xA5, 0x3C];
         let msb: Vec<usize> = BitChunker::<_, 4, MsbFirst>::new(data.into_iter()).collect();
         assert_eq!(msb, vec![0xA, 0x5, 0x3, 0xC]);
 
@@ -592,26 +552,15 @@ mod tests {
         assert_eq!(lsb, vec![0x5, 0xA, 0xC, 0x3]);
     }
 
-    // --- Boundary Crossing (K = 3, 5) ---
-
     #[test]
     fn test_8psk_k3_aligned_boundary_crossing() {
-        // 3 bytes = 24 bits = exactly 8 chunks of 3 bits
         let data = [0b101_100_11, 0b0_101_110_0, 0b11_000_111];
-
-        // MsbFirst:
-        // Byte 0: [101, 100, (11_)]
-        // Byte 1: [(11_0), 101, 110, (_0)]
-        // Byte 2: [(0_11), 000, 111]
         let msb: Vec<usize> = BitChunker::<_, 3, MsbFirst>::new(data.into_iter()).collect();
         assert_eq!(
             msb,
             vec![0b101, 0b100, 0b110, 0b101, 0b110, 0b011, 0b000, 0b111]
         );
 
-        // LsbFirst:
-        // Byte 0: [011, 001, (10_)]
-        // Byte 1: [(10_) | (010_ << 2) -> 01010 -> 010, next: 111, rem: 00]
         let lsb: Vec<usize> =
             BitChunker::<_, 3, LsbFirst>::with_order_and_padding(data.into_iter()).collect();
         assert_eq!(lsb.len(), 8);
@@ -619,32 +568,22 @@ mod tests {
 
     #[test]
     fn test_k5_multi_byte_spanning() {
-        // 5 bytes = 40 bits = exactly 8 chunks of 5 bits
         let data = [0xFF, 0x00, 0xAA, 0x55, 0xF0];
         let msb: Vec<usize> = BitChunker::<_, 5, MsbFirst>::new(data.into_iter()).collect();
         assert_eq!(msb.len(), 8);
-
         for &chunk in &msb {
             assert!(chunk < (1 << 5), "Chunk {chunk} exceeds 5-bit width");
         }
     }
 
-    // --- Padding Strategies ---
-
     #[test]
     fn test_padding_pad_zeros() {
-        // 1 byte = 8 bits. With K = 3: 2 full chunks (6 bits) + 2 leftover bits.
         let data = [0b1101_0110];
-
-        // MsbFirst: chunks [110, 101], remainder 2 bits: [10].
-        // PadZeros shifts [10] left by 1 to form [100] (4).[cite: 10]
         let msb: Vec<usize> =
             BitChunker::<_, 3, MsbFirst, PadZeros>::with_order_and_padding(data.into_iter())
                 .collect();
         assert_eq!(msb, vec![0b110, 0b101, 0b100]);
 
-        // LsbFirst: lowest 3 bits [110] (6), next 3 bits [010] (2), remainder 2 bits [11].
-        // PadZeros takes remainder [11] directly as [011] (3).[cite: 10]
         let lsb: Vec<usize> =
             BitChunker::<_, 3, LsbFirst, PadZeros>::with_order_and_padding(data.into_iter())
                 .collect();
@@ -653,9 +592,7 @@ mod tests {
 
     #[test]
     fn test_padding_discard_remainder() {
-        // 1 byte = 8 bits. With K = 3, remaining 2 bits should be dropped.[cite: 10]
         let data = [0b1101_0110];
-
         let msb: Vec<usize> =
             BitChunker::<_, 3, MsbFirst, DiscardRemainder>::with_order_and_padding(
                 data.into_iter(),
@@ -673,7 +610,6 @@ mod tests {
 
     #[test]
     fn test_padding_exact_only_success() {
-        // 3 bytes = 24 bits (cleanly divisible by K = 3)[cite: 10]
         let data = [0xAA, 0xBB, 0xCC];
         let msb: Vec<usize> =
             BitChunker::<_, 3, MsbFirst, ExactOnly>::with_order_and_padding(data.into_iter())
@@ -684,17 +620,13 @@ mod tests {
     #[test]
     #[should_panic(expected = "Bit stream ended with 2 unaligned bits in ExactOnly mode")]
     fn test_padding_exact_only_panic_on_unaligned() {
-        // 1 byte = 8 bits with K = 3 leaves 2 unaligned bits -> must panic[cite: 10]
         let data = [0xFF];
         let mut chunker =
             BitChunker::<_, 3, MsbFirst, ExactOnly>::with_order_and_padding(data.into_iter());
-
-        chunker.next(); // 1st chunk (3 bits consumed)
-        chunker.next(); // 2nd chunk (6 bits consumed)
-        chunker.next(); // Trailing 2 bits -> triggers panic[cite: 10]
+        chunker.next();
+        chunker.next();
+        chunker.next();
     }
-
-    // --- Edge Cases & Constellation Compatibility ---
 
     #[test]
     fn test_empty_stream() {
@@ -705,10 +637,7 @@ mod tests {
 
     #[test]
     fn test_qam4096_k12_slicing() {
-        // 3 bytes = 24 bits = exactly two 12-bit symbols
         let data = [0x12, 0x34, 0x56];
-
-        // MsbFirst: symbol 0 = 0x123 (bits 23..12), symbol 1 = 0x456 (bits 11..0)[cite: 10]
         let msb: Vec<usize> = BitChunker::<_, 12, MsbFirst>::new(data.into_iter()).collect();
         assert_eq!(msb, vec![0x123, 0x456]);
     }
@@ -729,7 +658,6 @@ mod tests {
 
     #[test]
     fn test_pack_bits_bpsk_k1() {
-        // 8 bits -> 1 byte 0b10110001 (0xB1)
         let symbols = vec![1, 0, 1, 1, 0, 0, 0, 1];
         let bytes: Vec<u8> = symbols.into_iter().pack_bits::<1>().collect();
         assert_eq!(bytes, vec![0b10110001]);
@@ -744,7 +672,7 @@ mod tests {
 
     #[test]
     fn test_pack_bits_qpsk_k2() {
-        let symbols = vec![3, 1, 0, 2]; // [0b11, 0b01, 0b00, 0b10]
+        let symbols = vec![3, 1, 0, 2];
         let bytes: Vec<u8> = symbols.into_iter().pack_bits::<2>().collect();
         assert_eq!(bytes, vec![0b11_01_00_10]);
     }
@@ -758,10 +686,8 @@ mod tests {
 
     #[test]
     fn test_chunk_and_pack_roundtrip_all_k() {
-        // 120 bytes is cleanly divisible by all K in 1..=8 (LCM of 1..8 is 840 bits = 105 bytes)
         let original: Vec<u8> = (0..120).map(|x| (x * 73) as u8).collect();
 
-        // Test symmetric and spanning bit widths in MSB order
         assert_eq!(
             original
                 .clone()
@@ -817,7 +743,6 @@ mod tests {
             original
         );
 
-        // Test LSB order roundtrip
         assert_eq!(
             original
                 .clone()
@@ -827,5 +752,31 @@ mod tests {
                 .collect::<Vec<_>>(),
             original
         );
+    }
+
+    #[test]
+    fn chunk_bits_with_honours_padding_policy() {
+        let data = [0b1101_0110u8];
+        let discarded: Vec<usize> = data
+            .into_iter()
+            .chunk_bits_with::<3, MsbFirst, DiscardRemainder>()
+            .collect();
+        assert_eq!(discarded, vec![0b110, 0b101]);
+
+        let padded: Vec<usize> = data
+            .into_iter()
+            .chunk_bits_with::<3, MsbFirst, PadZeros>()
+            .collect();
+        assert_eq!(padded, vec![0b110, 0b101, 0b100]);
+    }
+
+    #[test]
+    #[should_panic(expected = "unaligned bits in ExactOnly mode")]
+    fn chunk_bits_with_exact_only_panics() {
+        let data = [0xFFu8];
+        let _: Vec<usize> = data
+            .into_iter()
+            .chunk_bits_with::<3, MsbFirst, ExactOnly>()
+            .collect();
     }
 }

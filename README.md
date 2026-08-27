@@ -82,13 +82,13 @@ fn main() {
     // 1. Modulate bytes into complex baseband symbols (streaming iterator)
     let symbols: Vec<Complex<f32>> = payload
         .into_iter()
-        .modulate(qam16)
+        .modulate(&qam16)
         .collect();
 
     // 2. Demodulate received baseband symbols back into bytes via fast O(1) slicing
     let recovered: Vec<u8> = symbols
         .into_iter()
-        .demodulate_hard(qam16)
+        .demodulate_hard(&qam16)
         .collect();
 
     assert_eq!(&payload[..], &recovered[..]);
@@ -120,7 +120,7 @@ fn main() {
     // Compute scalar LLR per received bit
     let bit_llrs: Vec<f32> = received_samples
         .into_iter()
-        .demodulate_soft_bits(bpsk, noise_variance)
+        .demodulate_soft_bits(&bpsk, noise_variance)
         .collect();
 
     assert!(bit_llrs[0] > 0.0); // High confidence for bit 0
@@ -156,8 +156,8 @@ pub static CUSTOM_CONSTEL: Constellation<f32, 4, Normalized> =
 fn main() {
     let payload = [0x12, 0x34, 0xAB, 0xCD];
 
-    let symbols: Vec<_> = payload.into_iter().modulate(CUSTOM_CONSTEL).collect();
-    let recovered: Vec<u8> = symbols.into_iter().demodulate_hard(CUSTOM_CONSTEL).collect();
+    let symbols: Vec<_> = payload.into_iter().modulate(&CUSTOM_CONSTEL).collect();
+    let recovered: Vec<u8> = symbols.into_iter().demodulate_hard(&CUSTOM_CONSTEL).collect();
 
     assert_eq!(&payload[..], &recovered[..]);
 }

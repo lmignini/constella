@@ -7,7 +7,7 @@ fn main() {
 
     // 1,000 iterations = 2 billion complex symbols streamed and consumed on CPU
     for _ in 0..1_000 {
-        let stream = payload.iter().copied().modulate(qam16);
+        let stream = payload.iter().copied().modulate(&qam16);
         for symbol in stream {
             black_box(symbol);
         }

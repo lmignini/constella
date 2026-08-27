@@ -1,3 +1,4 @@
+use crate::channel::ChannelSample;
 use core::marker::PhantomData;
 use num_complex::Complex;
 use num_traits::Float;
@@ -82,7 +83,7 @@ pub trait FadingModel<T> {
     where
         T: Float,
         StandardNormal: Distribution<T>,
-        R: rand_core::Rng;
+        R: Rng;
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -121,7 +122,7 @@ impl<T> FadingModel<T> for RayleighModel<T> {
     where
         T: Float,
         StandardNormal: Distribution<T>,
-        R: rand_core::Rng,
+        R: Rng,
     {
         let z_i: T = StandardNormal.sample(rng);
         let z_q: T = StandardNormal.sample(rng);
@@ -166,7 +167,7 @@ impl<T> FadingModel<T> for RicianModel<T> {
     where
         T: Float,
         StandardNormal: Distribution<T>,
-        R: rand_core::Rng,
+        R: Rng,
     {
         let z_i: T = StandardNormal.sample(rng);
         let z_q: T = StandardNormal.sample(rng);
@@ -420,9 +421,18 @@ pub trait EqualizationPolicy<T> {
 pub struct ZeroForcing;
 
 impl<T: Float> EqualizationPolicy<T> for ZeroForcing {
+    #[inline]
     fn equalize(&self, symbol: FadedSymbol<T>) -> Complex<T> {
         let denominator = symbol.csi.norm_sqr();
-        (symbol.sample * symbol.csi.conj()) / denominator
+        // guard against deep fades producing Inf/NaN
+        if denominator <= T::min_positive_value() {
+            return Complex::new(T::zero(), T::zero());
+        }
+        let inv = denominator.recip();
+        Complex::new(
+            (symbol.sample.re * symbol.csi.re + symbol.sample.im * symbol.csi.im) * inv,
+            (symbol.sample.im * symbol.csi.re - symbol.sample.re * symbol.csi.im) * inv,
+        )
     }
 }
 
@@ -430,9 +440,13 @@ pub struct Mmse<T> {
     pub noise_var: T,
 }
 impl<T: Float> EqualizationPolicy<T> for Mmse<T> {
+    #[inline]
     fn equalize(&self, symbol: FadedSymbol<T>) -> Complex<T> {
         let denominator = symbol.csi.norm_sqr() + self.noise_var;
-        (symbol.sample * symbol.csi.conj()) / denominator
+        let inv = denominator.recip();
+        let prod = symbol.sample() * symbol.csi.conj();
+
+        Complex::new(prod.re * inv, prod.im * inv)
     }
 }
 pub struct EqualizeIter<I, T, E = ZeroForcing> {
@@ -960,7 +974,7 @@ mod tests {
         let rx_10db: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(bpsk)
+            .modulate(&bpsk)
             .add_rayleigh_csi(rng_fading_10db)
             .map(|faded| {
                 let z_i: f64 = StandardNormal.sample(&mut rng_awgn_10db);
@@ -972,7 +986,7 @@ mod tests {
                 }
             })
             .equalize_zf()
-            .demodulate_hard(bpsk)
+            .demodulate_hard(&bpsk)
             .collect();
 
         let bit_errors_10db: usize = payload
@@ -999,7 +1013,7 @@ mod tests {
         let rx_17db: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(bpsk)
+            .modulate(&bpsk)
             .add_rayleigh_csi(rng_fading_17db)
             .map(|faded| {
                 let z_i: f64 = StandardNormal.sample(&mut rng_awgn_17db);
@@ -1011,7 +1025,7 @@ mod tests {
                 }
             })
             .equalize_zf()
-            .demodulate_hard(bpsk)
+            .demodulate_hard(&bpsk)
             .collect();
 
         let bit_errors_17db: usize = payload
@@ -1025,6 +1039,16 @@ mod tests {
             (empirical_ber_17db - theoretical_ber_17db).abs() < 0.0015,
             "Rayleigh BER at 17 dB was {empirical_ber_17db:.5}, expected ~{theoretical_ber_17db:.5}"
         );
+    }
+
+    #[test]
+    fn zf_deep_fade_does_not_produce_nan() {
+        let faded = FadedSymbol {
+            sample: Complex::new(1e-30_f32, 1e-30),
+            csi: Complex::new(1e-30_f32, 0.0),
+        };
+        let out = ZeroForcing.equalize(faded);
+        assert!(out.re.is_finite() && out.im.is_finite());
     }
 }
 
@@ -1054,10 +1078,10 @@ mod additional_tests {
         let recovered: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(qam16)
+            .modulate(&qam16)
             .add_rayleigh_csi(rng)
             .equalize_zf()
-            .demodulate_hard(qam16)
+            .demodulate_hard(&qam16)
             .collect();
 
         assert_eq!(recovered, payload);
@@ -1072,10 +1096,10 @@ mod additional_tests {
         let recovered: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(qpsk)
+            .modulate(&qpsk)
             .add_rician_csi_k_db(6.0, 0.5, rng)
             .equalize_zf()
-            .demodulate_hard(qpsk)
+            .demodulate_hard(&qpsk)
             .collect();
 
         assert_eq!(recovered, payload);
@@ -1136,7 +1160,9 @@ mod additional_tests {
         let noise_var = 0.1f32;
         let equalized_samples = faded_symbols.equalize_zf();
 
-        let llrs: Vec<[f32; 1]> = equalized_samples.demodulate_soft(bpsk, noise_var).collect();
+        let llrs: Vec<[f32; 1]> = equalized_samples
+            .demodulate_soft(&bpsk, noise_var)
+            .collect();
 
         assert!(llrs[0][0] > 0.0, "Expected positive LLR for bit 0");
         assert!(llrs[1][0] < 0.0, "Expected negative LLR for bit 1");
@@ -1159,13 +1185,13 @@ mod additional_tests {
                 payload
                     .clone()
                     .into_iter()
-                    .modulate(bpsk)
+                    .modulate(&bpsk)
                     .differential_encode(),
             )
             .add_rayleigh_block::<64, _>(rng)
             .differential_decode()
             .skip(1)
-            .demodulate_hard(bpsk)
+            .demodulate_hard(&bpsk)
             .collect();
 
         assert_eq!(recovered, payload);
@@ -1218,7 +1244,7 @@ mod additional_tests {
         let recovered: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(qpsk)
+            .modulate(&qpsk)
             .add_rayleigh_csi(rng_fading)
             .map(|faded| {
                 let z_i: f64 = StandardNormal.sample(&mut rng_awgn);
@@ -1229,7 +1255,7 @@ mod additional_tests {
                 }
             })
             .equalize_zf()
-            .demodulate_hard(qpsk)
+            .demodulate_hard(&qpsk)
             .collect();
 
         assert_eq!(recovered, payload);

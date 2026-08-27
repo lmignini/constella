@@ -209,10 +209,10 @@ mod tests {
         let recovered: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(bpsk)
+            .modulate(&bpsk)
             .differential_encode()
             .differential_decode()
-            .demodulate_hard(bpsk)
+            .demodulate_hard(&bpsk)
             .collect();
 
         assert_eq!(recovered, payload);
@@ -227,10 +227,10 @@ mod tests {
         let recovered: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(qpsk)
+            .modulate(&qpsk)
             .differential_encode()
             .differential_decode()
-            .demodulate_hard(qpsk)
+            .demodulate_hard(&qpsk)
             .collect();
 
         assert_eq!(recovered, payload);
@@ -246,10 +246,10 @@ mod tests {
         let recovered: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(psk8)
+            .modulate(&psk8)
             .differential_encode()
             .differential_decode()
-            .demodulate_hard(psk8)
+            .demodulate_hard(&psk8)
             .collect();
 
         assert_eq!(recovered, payload);
@@ -281,7 +281,7 @@ mod tests {
         let tx_data_symbols = payload
             .clone()
             .into_iter()
-            .modulate(qpsk)
+            .modulate(&qpsk)
             .differential_encode();
 
         // 2. Prepend the reference pilot symbol and send the burst across the channel
@@ -293,7 +293,7 @@ mod tests {
         let recovered_symbols = rx_channel_stream.differential_decode().skip(1);
 
         // 4. Demodulate the cleaned baseband symbols back into bytes
-        let recovered: Vec<u8> = recovered_symbols.demodulate_hard(qpsk).collect();
+        let recovered: Vec<u8> = recovered_symbols.demodulate_hard(&qpsk).collect();
 
         assert_eq!(recovered, payload);
     }
@@ -316,11 +316,11 @@ mod tests {
         let recovered: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(qpsk)
+            .modulate(&qpsk)
             .differential_encode()
             .add_phase_offset(phase_offset)
             .differential_decode_with_reference(channel_reference)
-            .demodulate_hard(qpsk)
+            .demodulate_hard(&qpsk)
             .collect();
 
         assert_eq!(recovered, payload);
@@ -406,8 +406,8 @@ mod tests {
         use rand_xoshiro::Xoshiro256PlusPlus;
 
         let payload = vec![0x55, 0xAA, 0x12, 0x34, 0xDE, 0xAD, 0xBE, 0xEF];
-        let bpsk = Bpsk::<f32>::BPSK; //[cite: 8]
-        let rng = Xoshiro256PlusPlus::seed_from_u64(42); //[cite: 8]
+        let bpsk = Bpsk::<f32>::BPSK; //
+        let rng = Xoshiro256PlusPlus::seed_from_u64(42); //
         let pilot = Complex::new(1.0f32, 0.0f32);
 
         // At 30 dB SNR, error probability is practically 0
@@ -416,16 +416,16 @@ mod tests {
                 payload
                     .clone()
                     .into_iter()
-                    .modulate(bpsk)
+                    .modulate(&bpsk)
                     .differential_encode(),
             ) //[cite: 1, 14]
-            .add_awgn_snr(&bpsk, 30.0, rng) //[cite: 8]
-            .differential_decode() //[cite: 14]
+            .add_awgn_snr(&bpsk, 30.0, rng) //
+            .differential_decode() //
             .skip(1)
-            .demodulate_hard(bpsk) //[cite: 8]
+            .demodulate_hard(&bpsk) //
             .collect();
 
-        assert_eq!(recovered, payload); //[cite: 8]
+        assert_eq!(recovered, payload); //
     }
 
     #[test]
@@ -434,8 +434,8 @@ mod tests {
         use rand_xoshiro::Xoshiro256PlusPlus;
 
         let payload = vec![0x12, 0x34, 0x56, 0x78, 0x9A, 0xBC, 0xDE, 0xF0];
-        let qpsk = Qpsk::<f32>::QPSK; //[cite: 8]
-        let rng = Xoshiro256PlusPlus::seed_from_u64(1234); //[cite: 8]
+        let qpsk = Qpsk::<f32>::QPSK; //
+        let rng = Xoshiro256PlusPlus::seed_from_u64(1234); //
         let pilot = Complex::new(1.0f32, 0.0f32);
 
         // At 30 dB SNR, DQPSK should have zero bit errors
@@ -444,16 +444,16 @@ mod tests {
                 payload
                     .clone()
                     .into_iter()
-                    .modulate(qpsk)
+                    .modulate(&qpsk)
                     .differential_encode(),
             ) //[cite: 1, 14]
-            .add_awgn_snr(&qpsk, 30.0, rng) //[cite: 8]
-            .differential_decode() //[cite: 14]
+            .add_awgn_snr(&qpsk, 30.0, rng) //
+            .differential_decode() //
             .skip(1)
-            .demodulate_hard(qpsk) //[cite: 8]
+            .demodulate_hard(&qpsk) //
             .collect();
 
-        assert_eq!(recovered, payload); //[cite: 8]
+        assert_eq!(recovered, payload); //
     }
 
     #[test]
@@ -461,9 +461,9 @@ mod tests {
         use rand_core::SeedableRng;
         use rand_xoshiro::Xoshiro256PlusPlus;
 
-        let bpsk = Bpsk::<f64>::BPSK; //[cite: 8]
+        let bpsk = Bpsk::<f64>::BPSK; //
         let num_bytes = 20_000; // 160,000 bits per SNR evaluation point
-        let total_bits = (num_bytes * 8) as f64; //[cite: 8]
+        let total_bits = (num_bytes * 8) as f64; //
         let pilot = Complex::new(1.0f64, 0.0f64);
 
         // Generate deterministic payload
@@ -474,27 +474,27 @@ mod tests {
         // Theoretical DBPSK bit error probability: Pb = 0.5 * exp(-Eb/N0_lin)
         // Pb = 0.5 * exp(-1.0) ≈ 0.18394 (18.39%)
         // ---------------------------------------------------------------------
-        let rng_0db = Xoshiro256PlusPlus::seed_from_u64(4242); //[cite: 8]
+        let rng_0db = Xoshiro256PlusPlus::seed_from_u64(4242); //
         let rx_0db: Vec<u8> = core::iter::once(pilot)
             .chain(
                 payload
                     .clone()
                     .into_iter()
-                    .modulate(bpsk)
+                    .modulate(&bpsk)
                     .differential_encode(),
             ) //[cite: 1, 14]
-            .add_awgn_ebn0(&bpsk, 0.0, rng_0db) //[cite: 8]
-            .differential_decode() //[cite: 14]
+            .add_awgn_ebn0(&bpsk, 0.0, rng_0db) //
+            .differential_decode() //
             .skip(1)
-            .demodulate_hard(bpsk) //[cite: 8]
+            .demodulate_hard(&bpsk) //
             .collect();
 
         let bit_errors_0db: usize = payload
             .iter()
             .zip(rx_0db.iter())
-            .map(|(&a, &b)| (a ^ b).count_ones() as usize) //[cite: 8]
-            .sum(); //[cite: 8]
-        let ber_0db = (bit_errors_0db as f64) / total_bits; //[cite: 8]
+            .map(|(&a, &b)| (a ^ b).count_ones() as usize) //
+            .sum(); //
+        let ber_0db = (bit_errors_0db as f64) / total_bits; //
 
         assert!(
             (ber_0db - 0.18394).abs() < 0.015,
@@ -505,27 +505,27 @@ mod tests {
         // 2. Medium Eb/N0: 4.0 dB
         // Pb = 0.5 * exp(-2.51189) ≈ 0.04055 (4.06%)
         // ---------------------------------------------------------------------
-        let rng_4db = Xoshiro256PlusPlus::seed_from_u64(8484); //[cite: 8]
+        let rng_4db = Xoshiro256PlusPlus::seed_from_u64(8484); //
         let rx_4db: Vec<u8> = core::iter::once(pilot)
             .chain(
                 payload
                     .clone()
                     .into_iter()
-                    .modulate(bpsk)
+                    .modulate(&bpsk)
                     .differential_encode(),
             ) //[cite: 1, 14]
-            .add_awgn_ebn0(&bpsk, 4.0, rng_4db) //[cite: 8]
-            .differential_decode() //[cite: 14]
+            .add_awgn_ebn0(&bpsk, 4.0, rng_4db) //
+            .differential_decode() //
             .skip(1)
-            .demodulate_hard(bpsk) //[cite: 8]
+            .demodulate_hard(&bpsk) //
             .collect();
 
         let bit_errors_4db: usize = payload
             .iter()
             .zip(rx_4db.iter())
-            .map(|(&a, &b)| (a ^ b).count_ones() as usize) //[cite: 8]
-            .sum(); //[cite: 8]
-        let ber_4db = (bit_errors_4db as f64) / total_bits; //[cite: 8]
+            .map(|(&a, &b)| (a ^ b).count_ones() as usize) //
+            .sum(); //
+        let ber_4db = (bit_errors_4db as f64) / total_bits; //
 
         assert!(
             (ber_4db - 0.04055).abs() < 0.005,
@@ -542,21 +542,21 @@ mod tests {
                 payload
                     .clone()
                     .into_iter()
-                    .modulate(bpsk)
+                    .modulate(&bpsk)
                     .differential_encode(),
             ) //[cite: 1, 14]
-            .add_awgn_ebn0(&bpsk, 7.0, rng_7db) //[cite: 8]
-            .differential_decode() //[cite: 14]
+            .add_awgn_ebn0(&bpsk, 7.0, rng_7db) //
+            .differential_decode() //
             .skip(1)
-            .demodulate_hard(bpsk) //[cite: 8]
+            .demodulate_hard(&bpsk) //
             .collect();
 
         let bit_errors_7db: usize = payload
             .iter()
             .zip(rx_7db.iter())
-            .map(|(&a, &b)| (a ^ b).count_ones() as usize) //[cite: 8]
-            .sum(); //[cite: 8]
-        let ber_7db = (bit_errors_7db as f64) / total_bits; //[cite: 8]
+            .map(|(&a, &b)| (a ^ b).count_ones() as usize) //
+            .sum(); //
+        let ber_7db = (bit_errors_7db as f64) / total_bits; //
 
         assert!(
             (ber_7db - 0.00332).abs() < 0.0015,
@@ -569,18 +569,18 @@ mod tests {
         use rand_core::SeedableRng;
         use rand_xoshiro::Xoshiro256PlusPlus;
 
-        let bpsk = Bpsk::<f64>::BPSK; //[cite: 8]
+        let bpsk = Bpsk::<f64>::BPSK; //
         let num_bytes = 10_000; // 80,000 bits per step
-        let total_bits = (num_bytes * 8) as f64; //[cite: 8]
+        let total_bits = (num_bytes * 8) as f64; //
         let pilot = Complex::new(1.0f64, 0.0f64);
 
         // Generate deterministic pseudo-random payload
-        let payload: Vec<u8> = (0..num_bytes).map(|i| (i * 157 + 31) as u8).collect(); //[cite: 8]
+        let payload: Vec<u8> = (0..num_bytes).map(|i| (i * 157 + 31) as u8).collect(); //
 
         // Sweep from 0.0 dB to 8.0 dB in 0.2 dB increments (41 evaluation points)
         for step in 0..=40 {
             let ebn0_db = (step as f64) * 0.2;
-            let ebn0_lin = 10.0f64.powf(ebn0_db / 10.0); //[cite: 8]
+            let ebn0_lin = 10.0f64.powf(ebn0_db / 10.0); //
 
             // Theoretical DBPSK error probability in AWGN: Pb = 0.5 * exp(-Eb/N0)
             let theoretical_ber = 0.5 * (-ebn0_lin).exp();
@@ -592,33 +592,33 @@ mod tests {
                     payload
                         .clone()
                         .into_iter()
-                        .modulate(bpsk)
+                        .modulate(&bpsk)
                         .differential_encode(),
                 ) //[cite: 1, 14]
-                .add_awgn_ebn0(&bpsk, ebn0_db, rng) //[cite: 8]
-                .differential_decode() //[cite: 14]
+                .add_awgn_ebn0(&bpsk, ebn0_db, rng) //
+                .differential_decode() //
                 .skip(1)
-                .demodulate_hard(bpsk) //[cite: 8]
+                .demodulate_hard(&bpsk) //
                 .collect();
 
             // Count bit errors
             let bit_errors: usize = payload
                 .iter()
                 .zip(rx_bytes.iter())
-                .map(|(&tx, &rx)| (tx ^ rx).count_ones() as usize) //[cite: 8]
-                .sum(); //[cite: 8]
-            let empirical_ber = (bit_errors as f64) / total_bits; //[cite: 8]
+                .map(|(&tx, &rx)| (tx ^ rx).count_ones() as usize) //
+                .sum(); //
+            let empirical_ber = (bit_errors as f64) / total_bits; //
 
             // Binomial standard deviation: sigma = sqrt(p * (1 - p) / N)
-            let std_err = (theoretical_ber * (1.0 - theoretical_ber) / total_bits).sqrt(); //[cite: 8]
-            let margin = 4.0 * std_err + 0.0005; // 4-sigma envelope + small base floor[cite: 8]
+            let std_err = (theoretical_ber * (1.0 - theoretical_ber) / total_bits).sqrt(); //
+            let margin = 4.0 * std_err + 0.0005; // 4-sigma envelope + small base floor
 
-            let delta = (empirical_ber - theoretical_ber).abs(); //[cite: 8]
+            let delta = (empirical_ber - theoretical_ber).abs(); //
             assert!(
                 delta <= margin,
                 "Failed at Eb/N0 = {ebn0_db:.1} dB: Empirical BER = {empirical_ber:.5}, \
                  Theoretical = {theoretical_ber:.5}, Delta = {delta:.5} (allowed margin = {margin:.5})"
-            ); //[cite: 8]
+            ); //
         }
     }
 }

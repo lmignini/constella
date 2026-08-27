@@ -3,8 +3,7 @@ pub const fn is_valid_constellation_size(m: usize) -> bool {
 }
 
 pub const fn gives_square_constellation(m: usize) -> bool {
-    let k = m.ilog2();
-    m.is_power_of_two() && k >= 2 && k.is_multiple_of(2)
+    m.is_power_of_two() && m >= 4 && m.ilog2().is_multiple_of(2)
 }
 pub const fn binary_to_gray(val: usize) -> usize {
     val ^ (val >> 1)

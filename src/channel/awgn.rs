@@ -268,9 +268,9 @@ mod tests {
         let recovered: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(qpsk)
+            .modulate(&qpsk)
             .add_awgn_snr(&qpsk, 30.0, rng)
-            .demodulate_hard(qpsk)
+            .demodulate_hard(&qpsk)
             .collect();
 
         assert_eq!(recovered, payload);
@@ -290,9 +290,9 @@ mod tests {
         let rx_0db: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(bpsk)
+            .modulate(&bpsk)
             .add_awgn_ebn0(&bpsk, 0.0, rng_0db)
-            .demodulate_hard(bpsk)
+            .demodulate_hard(&bpsk)
             .collect();
 
         let bit_errors_0db: usize = payload
@@ -313,9 +313,9 @@ mod tests {
         let rx_7db: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(bpsk)
+            .modulate(&bpsk)
             .add_awgn_ebn0(&bpsk, 6.8, rng_7db)
-            .demodulate_hard(bpsk)
+            .demodulate_hard(&bpsk)
             .collect();
 
         let bit_errors_7db: usize = payload
@@ -341,9 +341,9 @@ mod tests {
         let recovered: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(qam16)
+            .modulate(&qam16)
             .add_awgn_snr(&qam16, 30.0, rng)
-            .demodulate_hard(qam16)
+            .demodulate_hard(&qam16)
             .collect();
 
         assert_eq!(recovered, payload);
@@ -367,9 +367,9 @@ mod tests {
         let rx_4db: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(qam16)
+            .modulate(&qam16)
             .add_awgn_ebn0(&qam16, 4.0, rng_4db)
-            .demodulate_hard(qam16)
+            .demodulate_hard(&qam16)
             .collect();
 
         let bit_errors_4db: usize = payload
@@ -393,9 +393,9 @@ mod tests {
         let rx_8db: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(qam16)
+            .modulate(&qam16)
             .add_awgn_ebn0(&qam16, 8.0, rng_8db)
-            .demodulate_hard(qam16)
+            .demodulate_hard(&qam16)
             .collect();
 
         let bit_errors_8db: usize = payload
@@ -447,9 +447,9 @@ mod tests {
             let rx_bytes: Vec<u8> = payload
                 .clone()
                 .into_iter()
-                .modulate(bpsk)
+                .modulate(&bpsk)
                 .add_awgn_ebn0(&bpsk, ebn0_db, rng)
-                .demodulate_hard(bpsk)
+                .demodulate_hard(&bpsk)
                 .collect();
 
             // Count bit errors

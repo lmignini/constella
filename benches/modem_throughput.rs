@@ -18,15 +18,15 @@ fn bench_constellations(c: &mut Criterion) {
     let bpsk = Bpsk::<f32>::BPSK;
     group.bench_function("bpsk/modulate", |b| {
         b.iter(|| {
-            let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(bpsk).collect();
+            let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(&bpsk).collect();
             std::hint::black_box(symbols);
         })
     });
 
-    let bpsk_syms: Vec<Complex<f32>> = payload.iter().copied().modulate(bpsk).collect();
+    let bpsk_syms: Vec<Complex<f32>> = payload.iter().copied().modulate(&bpsk).collect();
     group.bench_function("bpsk/demodulate_hard", |b| {
         b.iter(|| {
-            let recovered: Vec<u8> = bpsk_syms.iter().copied().demodulate_hard(bpsk).collect();
+            let recovered: Vec<u8> = bpsk_syms.iter().copied().demodulate_hard(&bpsk).collect();
             std::hint::black_box(recovered);
         })
     });
@@ -35,15 +35,15 @@ fn bench_constellations(c: &mut Criterion) {
     let qpsk = Qpsk::<f32>::QPSK;
     group.bench_function("qpsk/modulate", |b| {
         b.iter(|| {
-            let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(qpsk).collect();
+            let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(&qpsk).collect();
             std::hint::black_box(symbols);
         })
     });
 
-    let qpsk_syms: Vec<Complex<f32>> = payload.iter().copied().modulate(qpsk).collect();
+    let qpsk_syms: Vec<Complex<f32>> = payload.iter().copied().modulate(&qpsk).collect();
     group.bench_function("qpsk/demodulate_hard", |b| {
         b.iter(|| {
-            let recovered: Vec<u8> = qpsk_syms.iter().copied().demodulate_hard(qpsk).collect();
+            let recovered: Vec<u8> = qpsk_syms.iter().copied().demodulate_hard(&qpsk).collect();
             std::hint::black_box(recovered);
         })
     });
@@ -52,15 +52,15 @@ fn bench_constellations(c: &mut Criterion) {
     let qam16 = Qam16::<f32>::QAM16;
     group.bench_function("qam16/modulate", |b| {
         b.iter(|| {
-            let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(qam16).collect();
+            let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(&qam16).collect();
             std::hint::black_box(symbols);
         })
     });
 
-    let qam16_syms: Vec<Complex<f32>> = payload.iter().copied().modulate(qam16).collect();
+    let qam16_syms: Vec<Complex<f32>> = payload.iter().copied().modulate(&qam16).collect();
     group.bench_function("qam16/demodulate_square_o1", |b| {
         b.iter(|| {
-            let recovered: Vec<u8> = qam16_syms.iter().copied().demodulate_hard(qam16).collect();
+            let recovered: Vec<u8> = qam16_syms.iter().copied().demodulate_hard(&qam16).collect();
             std::hint::black_box(recovered);
         })
     });
@@ -69,15 +69,15 @@ fn bench_constellations(c: &mut Criterion) {
     let qam64 = Qam64::<f32>::QAM64;
     group.bench_function("qam64/modulate_bit_buffered", |b| {
         b.iter(|| {
-            let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(qam64).collect();
+            let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(&qam64).collect();
             std::hint::black_box(symbols);
         })
     });
 
-    let qam64_syms: Vec<Complex<f32>> = payload.iter().copied().modulate(qam64).collect();
+    let qam64_syms: Vec<Complex<f32>> = payload.iter().copied().modulate(&qam64).collect();
     group.bench_function("qam64/demodulate_square_o1", |b| {
         b.iter(|| {
-            let recovered: Vec<u8> = qam64_syms.iter().copied().demodulate_hard(qam64).collect();
+            let recovered: Vec<u8> = qam64_syms.iter().copied().demodulate_hard(&qam64).collect();
             std::hint::black_box(recovered);
         })
     });
@@ -86,18 +86,18 @@ fn bench_constellations(c: &mut Criterion) {
     let qam256 = Qam256::<f32>::QAM256;
     group.bench_function("qam256/modulate_1to1", |b| {
         b.iter(|| {
-            let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(qam256).collect();
+            let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(&qam256).collect();
             std::hint::black_box(symbols);
         })
     });
 
-    let qam256_syms: Vec<Complex<f32>> = payload.iter().copied().modulate(qam256).collect();
+    let qam256_syms: Vec<Complex<f32>> = payload.iter().copied().modulate(&qam256).collect();
     group.bench_function("qam256/demodulate_square_o1", |b| {
         b.iter(|| {
             let recovered: Vec<u8> = qam256_syms
                 .iter()
                 .copied()
-                .demodulate_hard(qam256)
+                .demodulate_hard(&qam256)
                 .collect();
             std::hint::black_box(recovered);
         })
@@ -111,7 +111,7 @@ fn bench_channel_impairments(c: &mut Criterion) {
     let mut group = c.benchmark_group("channels");
     let payload = vec![0xA5; PAYLOAD_SIZE];
     let qam16 = Qam16::<f32>::QAM16;
-    let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(qam16).collect();
+    let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(&qam16).collect();
 
     group.throughput(Throughput::Elements(symbols.len() as u64));
 
@@ -178,8 +178,8 @@ fn bench_end_to_end_pipeline(c: &mut Criterion) {
             let recovered: Vec<u8> = payload
                 .iter()
                 .copied()
-                .modulate(qam16)
-                .demodulate_hard(qam16)
+                .modulate(&qam16)
+                .demodulate_hard(&qam16)
                 .collect();
             std::hint::black_box(recovered);
         })
@@ -193,11 +193,11 @@ fn bench_end_to_end_pipeline(c: &mut Criterion) {
             let recovered: Vec<u8> = payload
                 .iter()
                 .copied()
-                .modulate(qam16)
+                .modulate(&qam16)
                 .add_cfo_hz(50.0, 1_000_000.0)
                 .add_phase_noise(0.001, rng_phase)
                 .add_awgn_snr(&qam16, 25.0, rng_awgn)
-                .demodulate_hard(qam16)
+                .demodulate_hard(&qam16)
                 .collect();
             std::hint::black_box(recovered);
         })
@@ -211,7 +211,7 @@ fn bench_soft_demodulation(c: &mut Criterion) {
     let mut group = c.benchmark_group("soft_demodulation");
     let payload = vec![0x55; 256 * 1024]; // 256 KB
     let qpsk = Qpsk::<f32>::QPSK;
-    let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(qpsk).collect();
+    let symbols: Vec<Complex<f32>> = payload.iter().copied().modulate(&qpsk).collect();
     let noise_var = 0.1f32;
 
     group.throughput(Throughput::Elements(symbols.len() as u64));
@@ -222,7 +222,7 @@ fn bench_soft_demodulation(c: &mut Criterion) {
             let llrs: Vec<[f32; 2]> = symbols
                 .iter()
                 .copied()
-                .demodulate_soft(qpsk, noise_var)
+                .demodulate_soft(&qpsk, noise_var)
                 .collect();
             std::hint::black_box(llrs);
         })
@@ -234,7 +234,7 @@ fn bench_soft_demodulation(c: &mut Criterion) {
             let llrs: Vec<f32> = symbols
                 .iter()
                 .copied()
-                .demodulate_soft_bits(qpsk, noise_var)
+                .demodulate_soft_bits(&qpsk, noise_var)
                 .collect();
             std::hint::black_box(llrs);
         })

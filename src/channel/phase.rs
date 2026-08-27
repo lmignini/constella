@@ -420,10 +420,10 @@ mod tests {
         let recovered: Vec<u8> = payload
             .clone()
             .into_iter()
-            .modulate(qpsk)
+            .modulate(&qpsk)
             .add_phase_noise(0.001, rng_phase)
             .add_awgn_snr(&qpsk, 35.0, rng_awgn)
-            .demodulate_hard(qpsk)
+            .demodulate_hard(&qpsk)
             .collect();
 
         assert_eq!(recovered, payload);
