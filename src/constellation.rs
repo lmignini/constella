@@ -299,7 +299,6 @@ macro_rules! impl_constellation_float {
                 min_idx
             }
         }
-
         // --- Soft Demodulation for Any Geometry ---
         impl<const M: usize, G: ConstellationGeometry> Constellation<$ty, M, Normalized, G> {
             #[inline]
@@ -309,24 +308,18 @@ macro_rules! impl_constellation_float {
                 noise_var: $ty,
             ) -> [$ty; K] {
                 assert_eq!(1 << K, M, "K must satisfy 2^K == M");
-                let mut dists = [0.0 as $ty; M];
-                let mut i = 0;
-                while i < M {
-                    let diff = self.points[i] - point;
-                    dists[i] = diff.re * diff.re + diff.im * diff.im;
-                    i += 1;
-                }
+                let scale = (1.0 as $ty) / noise_var;
 
-                let mut llrs = [0.0 as $ty; K];
-                let scale = (1.0 as $ty) / (noise_var);
+                let mut min_d0 = [<$ty>::INFINITY; K];
+                let mut min_d1 = [<$ty>::INFINITY; K];
 
-                let mut j = 0;
-                while j < K {
-                    let mut min_d0 = <$ty>::INFINITY;
-                    let mut min_d1 = <$ty>::INFINITY;
-                    let mut idx = 0;
-                    while idx < M {
-                        let d = dists[idx];
+                let mut idx = 0;
+                while idx < M {
+                    let diff = self.points[idx] - point;
+                    let d = diff.re * diff.re + diff.im * diff.im;
+
+                    let mut j = 0;
+                    while j < K {
                         let bit = if O::IS_MSB_FIRST {
                             (idx >> (K - 1 - j)) & 1
                         } else {
@@ -334,17 +327,23 @@ macro_rules! impl_constellation_float {
                         };
 
                         if bit == 0 {
-                            if d < min_d0 {
-                                min_d0 = d;
+                            if d < min_d0[j] {
+                                min_d0[j] = d;
                             }
                         } else {
-                            if d < min_d1 {
-                                min_d1 = d;
+                            if d < min_d1[j] {
+                                min_d1[j] = d;
                             }
                         }
-                        idx += 1;
+                        j += 1;
                     }
-                    llrs[j] = (min_d1 - min_d0) * scale;
+                    idx += 1;
+                }
+
+                let mut llrs = [0.0 as $ty; K];
+                let mut j = 0;
+                while j < K {
+                    llrs[j] = (min_d1[j] - min_d0[j]) * scale;
                     j += 1;
                 }
                 llrs

@@ -76,7 +76,7 @@ impl<const M: usize> DemodPoint<f64>
     }
 }
 
-impl<const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder + 'static>
+impl<const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder >
     SoftDemodPoint<f32, K, O> for Constellation<f32, M, Normalized, G>
 {
     #[inline(always)]
@@ -85,7 +85,7 @@ impl<const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder + 'st
     }
 }
 
-impl<const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder + 'static>
+impl<const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder >
     SoftDemodPoint<f64, K, O> for Constellation<f64, M, Normalized, G>
 {
     #[inline(always)]
@@ -111,7 +111,7 @@ where
 pub trait SoftDemodulatable<I, T, const K: usize, O = MsbFirst>
 where
     I: Iterator<Item = Complex<T>>,
-    O: BitOrder + 'static,
+    O: BitOrder ,
     T: Copy + Default,
 {
     type SoftSymbolOutput: Iterator<Item = [T; K]>;
@@ -172,7 +172,7 @@ macro_rules! impl_direct_demod_sizes {
                 }
 
                 #[inline]
-                pub fn demodulate_soft_with<'c, I: Iterator<Item = Complex<T>>, O: BitOrder + 'static>(
+                pub fn demodulate_soft_with<'c, I: Iterator<Item = Complex<T>>, O: BitOrder >(
                     &'c self,
                     iter: I,
                     noise_var: T,
@@ -196,7 +196,7 @@ macro_rules! impl_direct_demod_sizes {
                 }
 
                 #[inline]
-                pub fn demodulate_soft_bits_with<'c, I: Iterator<Item = Complex<T>>, O: BitOrder + 'static>(
+                pub fn demodulate_soft_bits_with<'c, I: Iterator<Item = Complex<T>>, O: BitOrder >(
                     &'c self,
                     iter: I,
                     noise_var: T,

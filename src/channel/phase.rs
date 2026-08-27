@@ -98,15 +98,22 @@ where
     StandardNormal: Distribution<T>,
     R: rand_core::Rng,
 {
+    // In src/channel/phase.rs:
+
     #[inline(always)]
     pub fn apply_point(&mut self, point: Complex<T>) -> Complex<T> {
-        // 1. Rotate symbol via complex multiplication
         let rotated_point = point * self.phasor;
 
-        // 2. Advance phasor by deterministic CFO step
+        // Fast-path: Static phase rotation requires no update or re-normalization
+        if self.step_phasor.re == T::one()
+            && self.step_phasor.im == T::zero()
+            && self.phase_noise_std <= T::zero()
+        {
+            return rotated_point;
+        }
+
         self.phasor = self.phasor * self.step_phasor;
 
-        // 3. Inject Wiener phase jitter if enabled
         if self.phase_noise_std > T::zero() {
             let z: T = StandardNormal.sample(&mut self.rng);
             let d_theta = self.phase_noise_std * z;
@@ -114,7 +121,6 @@ where
             self.phasor = self.phasor * jitter_phasor;
         }
 
-        // 4. Periodic unit-circle normalization (every 1024 samples)
         self.sample_count = self.sample_count.wrapping_add(1);
         if self.sample_count & 0x3FF == 0 {
             let norm = (self.phasor.re * self.phasor.re + self.phasor.im * self.phasor.im).sqrt();

@@ -25,6 +25,7 @@ use num_traits::Float;
 pub struct DifferentialEncoderIter<I, T> {
     iter: I,
     state: Complex<T>,
+    sample_count: usize,
 }
 
 impl<I, T> DifferentialEncoderIter<I, T>
@@ -38,6 +39,7 @@ where
         Self {
             iter,
             state: Complex::new(T::one(), T::zero()),
+            sample_count: 0,
         }
     }
 
@@ -49,6 +51,7 @@ where
         Self {
             iter,
             state: initial,
+            sample_count: 0,
         }
     }
 }
@@ -65,6 +68,14 @@ where
         let x_k = self.iter.next()?;
         let y_k = self.state * x_k;
         self.state = y_k;
+
+        self.sample_count = self.sample_count.wrapping_add(1);
+        if self.sample_count & 0x3FF == 0 {
+            let norm = (self.state.re * self.state.re + self.state.im * self.state.im).sqrt();
+            self.state.re = self.state.re / norm;
+            self.state.im = self.state.im / norm;
+        }
+
         Some(y_k)
     }
 

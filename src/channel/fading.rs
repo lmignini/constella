@@ -444,7 +444,7 @@ impl<T: Float> EqualizationPolicy<T> for Mmse<T> {
     fn equalize(&self, symbol: FadedSymbol<T>) -> Complex<T> {
         let denominator = symbol.csi.norm_sqr() + self.noise_var;
         let inv = denominator.recip();
-        let prod = symbol.sample() * symbol.csi.conj();
+        let prod = symbol.sample * symbol.csi.conj();
 
         Complex::new(prod.re * inv, prod.im * inv)
     }

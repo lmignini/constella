@@ -1,12 +1,11 @@
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
+use num_complex::Complex;
 use rand_core::SeedableRng;
 use rand_xoshiro::Xoshiro256PlusPlus;
 use ringbuf::HeapRb;
 use ringbuf::traits::{Consumer, Producer, Split};
 use std::f32::consts::PI;
 use std::io::{self, BufRead};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 use constella::channel::ChannelExt;
 use constella::constellation::Qpsk;
@@ -42,15 +41,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 3. DSP Configuration
     let constellation = Qpsk::<f32>::QPSK;
     let snr_db = 10.0f32; // Lower to ~12-15 dB for audible noise; increase to >25 dB for clear audio
-    let mut _rng_fading = Xoshiro256PlusPlus::seed_from_u64(0x1234_5678);
     let mut rng_awgn = Xoshiro256PlusPlus::seed_from_u64(0x8765_4321);
-
-    let running = Arc::new(AtomicBool::new(true));
 
     let input_channels = input_config.channels() as usize;
     let output_channels = output_config.channels() as usize;
 
-    // 1. Input Audio Callback (Extract Mono Frame -> Modulate -> Demodulate)
+    // 4. Input Audio Callback (Extract Mono Frame -> Modulate -> Demodulate)
     let input_data_fn = move |data: &[f32], _: &cpal::InputCallbackInfo| {
         // Extract only channel 0 (mono) per frame
         let pcm_bytes: Vec<u8> = data
@@ -62,13 +58,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             })
             .collect();
 
-        let recovered_bytes: Vec<u8> = pcm_bytes
+        let pilot = Complex::new(1.0f32, 0.0f32);
+        let tx_symbols = pcm_bytes
             .into_iter()
             .modulate(&constellation)
-            .differential_encode()
+            .differential_encode();
+
+        let recovered_bytes: Vec<u8> = core::iter::once(pilot)
+            .chain(tx_symbols)
             .add_phase_offset(PI / 2.0)
             .add_awgn_snr(&constellation, snr_db, &mut rng_awgn)
-            .differential_decode() // Channel rotates phase, NO EQUALIZER
+            .differential_decode() // Channel rotates phase, non-coherent differential detection
+            .skip(1)               // Drop dummy pilot transition metric
             .demodulate_hard(&constellation)
             .collect();
 
@@ -80,7 +81,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
     };
 
-    // 2. Output Audio Callback (Duplicate Mono Sample to All Stereo Channels)
+    // 5. Output Audio Callback (Duplicate Mono Sample to All Stereo Channels)
     let output_data_fn = move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
         for frame in data.chunks_exact_mut(output_channels) {
             let mono_sample = consumer.try_pop().unwrap_or(0.0);
@@ -89,6 +90,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             }
         }
     };
+
     // 6. Start Streams
     let err_fn = |err| eprintln!("Audio stream error: {}", err);
 
@@ -108,6 +110,5 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let stdin = io::stdin();
     let _ = stdin.lock().read_line(&mut String::new());
 
-    running.store(false, Ordering::SeqCst);
     Ok(())
 }

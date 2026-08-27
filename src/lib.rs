@@ -4,42 +4,40 @@
 
 #[cfg(any(feature = "alloc", test))]
 extern crate alloc;
-
 pub mod bits;
+pub mod channel;
 pub mod constellation;
 pub mod demodulation;
-pub mod modulation;
-pub(crate) mod utils;
-
-pub mod channel;
 pub mod differential;
-
-pub use constellation::{
-    Bpsk, Constellation, ConstellationGeometry, ConstellationState, General, Normalized, Psk8,
-    Qam16, Qam64, Qam256, Qam1024, Qam4096, Qpsk, RotatedPsk, SquareQam, StandardPsk, Unnormalized,
-};
-
-pub use demodulation::DemodulateExt;
-pub use modulation::ModulateExt;
+pub mod modulation;
+pub mod utils;
 
 pub use bits::{
-    BitOrder, ChunkBitsExt, DiscardRemainder, ExactOnly, LsbFirst, MsbFirst, PackBitsExt, PadZeros,
-    Padding,
+    BitOrder, ChunkBitsExt, DiscardRemainder, ExactOnly, LsbFirst, MsbFirst, PackBitsExt,
+    PadZeros, Padding,
 };
-
-pub use demodulation::{Demodulatable, SoftDemodulatable};
-pub use modulation::Modulatable;
+pub use channel::{AwgnChannel, ChannelExt, FadingChannel, PhaseDistortion};
+pub use constellation::{
+    Bpsk, Constellation, ConstellationGeometry, ConstellationState, General, Normalized, Psk8,
+    Qam4, Qam16, Qam64, Qam256, Qam1024, Qam4096, Qpsk, RotatedPsk, SquareQam, StandardPsk,
+    Unnormalized,
+};
+pub use demodulation::{
+    DemodulateExt, HardByteDemodIter, HardSymbolDemodIter, SoftBitDemodIter, SoftSymbolDemodIter,
+};
+pub use differential::{DifferentialDecoderIter, DifferentialEncoderIter, DifferentialExt};
+pub use modulation::{DirectModulationIter, ModulateExt, ModulationIter};
 
 pub mod prelude {
     pub use crate::bits::{
         ChunkBitsExt, DiscardRemainder, ExactOnly, LsbFirst, MsbFirst, PackBitsExt, PadZeros,
     };
+    pub use crate::channel::ChannelExt;
     pub use crate::constellation::{
-        Bpsk, Constellation, General, Normalized, Psk8, Qam16, Qam64, Qam256, Qam1024, Qam4096,
-        Qpsk, SquareQam, Unnormalized, RotatedPsk, StandardPsk
+        Bpsk, Constellation, General, Normalized, Psk8, Qam4, Qam16, Qam64, Qam256, Qam1024,
+        Qam4096, Qpsk, RotatedPsk, SquareQam, StandardPsk, Unnormalized,
     };
     pub use crate::demodulation::DemodulateExt;
-    pub use crate::modulation::ModulateExt;
-
     pub use crate::differential::DifferentialExt;
+    pub use crate::modulation::ModulateExt;
 }

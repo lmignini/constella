@@ -62,6 +62,8 @@ impl BitOrder for MsbFirst {
 
 impl BitOrder for LsbFirst {
     const IS_MSB_FIRST: bool = false;
+
+    #[inline]
     fn push_byte(buffer: &mut u64, count: &mut u8, byte: u8) {
         *buffer |= (byte as u64) << *count;
         *count += 8;
@@ -463,12 +465,15 @@ where
     }
 }
 
+/// Extension trait providing fluent `.chunk_bits(...)` syntax for byte streams.
 pub trait ChunkBitsExt: Iterator<Item = u8> + Sized {
+    /// Chunks a stream of bytes into $K$-bit symbol indices using default [`MsbFirst`] ordering.
     #[inline]
     fn chunk_bits<const K: usize>(self) -> BitChunker<Self, K, MsbFirst> {
         BitChunker::new(self)
     }
 
+    /// Chunks a stream of bytes into $K$-bit symbol indices using explicit [`BitOrder`] and [`Padding`].
     #[inline]
     fn chunk_bits_with<const K: usize, O: BitOrder, P: Padding>(self) -> BitChunker<Self, K, O, P> {
         BitChunker::with_order_and_padding(self)
