@@ -1,4 +1,3 @@
-use crate::channel::ChannelSample;
 use core::marker::PhantomData;
 use num_complex::Complex;
 use num_traits::Float;

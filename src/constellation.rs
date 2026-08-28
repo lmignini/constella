@@ -299,23 +299,22 @@ macro_rules! impl_constellation_float {
                 min_idx
             }
         }
-        // --- Soft Demodulation for Any Geometry ---
-        impl<const M: usize, G: ConstellationGeometry> Constellation<$ty, M, Normalized, G> {
-            #[inline]
-            pub fn demodulate_soft_point<const K: usize, O: BitOrder>(
-                &self,
-                point: Complex<$ty>,
-                noise_var: $ty,
-            ) -> [$ty; K] {
-                assert_eq!(1 << K, M, "K must satisfy 2^K == M");
-                let scale = (1.0 as $ty) / noise_var;
 
+        // --- Shared Branchless General Soft Demapper ---
+        impl<const M: usize, G: ConstellationGeometry> Constellation<$ty, M, Normalized, G> {
+            #[inline(always)]
+            fn demod_soft_general_scaled<const K: usize, O: BitOrder>(
+                points: &[Complex<$ty>; M],
+                point: Complex<$ty>,
+                inv_noise_var: $ty,
+                llrs: &mut [$ty; K],
+            ) {
                 let mut min_d0 = [<$ty>::INFINITY; K];
                 let mut min_d1 = [<$ty>::INFINITY; K];
 
                 let mut idx = 0;
                 while idx < M {
-                    let diff = self.points[idx] - point;
+                    let diff = points[idx] - point;
                     let d = diff.re * diff.re + diff.im * diff.im;
 
                     let mut j = 0;
@@ -327,25 +326,152 @@ macro_rules! impl_constellation_float {
                         };
 
                         if bit == 0 {
-                            if d < min_d0[j] {
-                                min_d0[j] = d;
-                            }
+                            min_d0[j] = min_d0[j].min(d);
                         } else {
-                            if d < min_d1[j] {
-                                min_d1[j] = d;
-                            }
+                            min_d1[j] = min_d1[j].min(d);
                         }
                         j += 1;
                     }
                     idx += 1;
                 }
 
-                let mut llrs = [0.0 as $ty; K];
                 let mut j = 0;
                 while j < K {
-                    llrs[j] = (min_d1[j] - min_d0[j]) * scale;
+                    llrs[j] = (min_d1[j] - min_d0[j]) * inv_noise_var;
                     j += 1;
                 }
+            }
+        }
+
+        // --- Standard PSK Soft Demodulation (0-Loop Closed Form for BPSK & QPSK) ---
+        impl<const M: usize> Constellation<$ty, M, Normalized, StandardPsk> {
+            #[inline]
+            pub fn demodulate_soft_point<const K: usize, O: BitOrder>(
+                &self,
+                point: Complex<$ty>,
+                noise_var: $ty,
+            ) -> [$ty; K] {
+                self.demodulate_soft_point_scaled::<K, O>(point, (1.0 as $ty) / noise_var)
+            }
+
+            #[inline(always)]
+            pub fn demodulate_soft_point_scaled<const K: usize, O: BitOrder>(
+                &self,
+                point: Complex<$ty>,
+                inv_noise_var: $ty,
+            ) -> [$ty; K] {
+                assert_eq!(1 << K, M, "K must satisfy 2^K == M");
+                let mut llrs = [0.0 as $ty; K];
+
+                if M == 2 {
+                    // Closed-form BPSK: LLR = 4 * Re(r) / N0
+                    llrs[0] = 4.0 * point.re * inv_noise_var;
+                } else if M == 4 {
+                    // Closed-form QPSK: LLR = 2*sqrt(2) * axis / N0
+                    let c = 2.0 * core::$ty::consts::SQRT_2 * inv_noise_var;
+                    if O::IS_MSB_FIRST {
+                        llrs[0] = point.im * c;
+                        llrs[1] = point.re * c;
+                    } else {
+                        llrs[0] = point.re * c;
+                        llrs[1] = point.im * c;
+                    }
+                } else {
+                    Self::demod_soft_general_scaled::<K, O>(
+                        &self.points,
+                        point,
+                        inv_noise_var,
+                        &mut llrs,
+                    );
+                }
+
+                llrs
+            }
+        }
+
+        // --- Rotated PSK Soft Demodulation ---
+        impl<const M: usize> Constellation<$ty, M, Normalized, RotatedPsk<$ty>> {
+            #[inline]
+            pub fn demodulate_soft_point<const K: usize, O: BitOrder>(
+                &self,
+                point: Complex<$ty>,
+                noise_var: $ty,
+            ) -> [$ty; K] {
+                self.demodulate_soft_point_scaled::<K, O>(point, (1.0 as $ty) / noise_var)
+            }
+
+            #[inline(always)]
+            pub fn demodulate_soft_point_scaled<const K: usize, O: BitOrder>(
+                &self,
+                point: Complex<$ty>,
+                inv_noise_var: $ty,
+            ) -> [$ty; K] {
+                assert_eq!(1 << K, M, "K must satisfy 2^K == M");
+                let mut llrs = [0.0 as $ty; K];
+                Self::demod_soft_general_scaled::<K, O>(
+                    &self.points,
+                    point,
+                    inv_noise_var,
+                    &mut llrs,
+                );
+                llrs
+            }
+        }
+
+        // --- Square QAM Soft Demodulation ---
+        impl<const M: usize> Constellation<$ty, M, Normalized, SquareQam<$ty>> {
+            #[inline]
+            pub fn demodulate_soft_point<const K: usize, O: BitOrder>(
+                &self,
+                point: Complex<$ty>,
+                noise_var: $ty,
+            ) -> [$ty; K] {
+                self.demodulate_soft_point_scaled::<K, O>(point, (1.0 as $ty) / noise_var)
+            }
+
+            #[inline(always)]
+            pub fn demodulate_soft_point_scaled<const K: usize, O: BitOrder>(
+                &self,
+                point: Complex<$ty>,
+                inv_noise_var: $ty,
+            ) -> [$ty; K] {
+                assert_eq!(1 << K, M, "K must satisfy 2^K == M");
+                let mut llrs = [0.0 as $ty; K];
+                Self::demod_soft_general_scaled::<K, O>(
+                    &self.points,
+                    point,
+                    inv_noise_var,
+                    &mut llrs,
+                );
+                llrs
+            }
+        }
+
+        // --- General Geometry Soft Demodulation ---
+        impl<const M: usize> Constellation<$ty, M, Normalized, General> {
+            #[inline]
+            pub fn demodulate_soft_point<const K: usize, O: BitOrder>(
+                &self,
+                point: Complex<$ty>,
+                noise_var: $ty,
+            ) -> [$ty; K] {
+                self.demodulate_soft_point_scaled::<K, O>(point, (1.0 as $ty) / noise_var)
+            }
+
+            #[inline(always)]
+            pub fn demodulate_soft_point_scaled<const K: usize, O: BitOrder>(
+                &self,
+                point: Complex<$ty>,
+                inv_noise_var: $ty,
+            ) -> [$ty; K] {
+                assert_eq!(1 << K, M, "K must satisfy 2^K == M");
+                let mut llrs = [0.0 as $ty; K];
+                Self::demod_soft_general_scaled::<K, O>(
+                    &self.points,
+                    point,
+                    inv_noise_var,
+                    &mut llrs,
+                );
                 llrs
             }
         }
@@ -714,5 +840,39 @@ mod tests {
             (llr - expected).abs() < 1e-12,
             "got {llr}, expected {expected}"
         );
+    }
+    #[test]
+    fn test_qpsk_soft_fast_paths_match_general_grid() {
+        use crate::bits::{LsbFirst, MsbFirst};
+
+        let qpsk = Qpsk::<f64>::QPSK;
+        let n0 = 0.35f64;
+        let inv_n0 = 1.0 / n0;
+
+        for i in -30..=30 {
+            for q in -30..=30 {
+                let point = Complex::new(i as f64 * 0.05, q as f64 * 0.05);
+
+                // 1. MSB First comparison
+                let fast_msb = qpsk.demodulate_soft_point::<2, MsbFirst>(point, n0);
+                let mut slow_msb = [0.0f64; 2];
+                Constellation::<f64, 4, Normalized, General>::demod_soft_general_scaled::<
+                    2,
+                    MsbFirst,
+                >(qpsk.points(), point, inv_n0, &mut slow_msb);
+                assert!((fast_msb[0] - slow_msb[0]).abs() < 1e-12);
+                assert!((fast_msb[1] - slow_msb[1]).abs() < 1e-12);
+
+                // 2. LSB First comparison
+                let fast_lsb = qpsk.demodulate_soft_point::<2, LsbFirst>(point, n0);
+                let mut slow_lsb = [0.0f64; 2];
+                Constellation::<f64, 4, Normalized, General>::demod_soft_general_scaled::<
+                    2,
+                    LsbFirst,
+                >(qpsk.points(), point, inv_n0, &mut slow_lsb);
+                assert!((fast_lsb[0] - slow_lsb[0]).abs() < 1e-12);
+                assert!((fast_lsb[1] - slow_lsb[1]).abs() < 1e-12);
+            }
+        }
     }
 }

@@ -117,7 +117,14 @@ where
         if self.phase_noise_std > T::zero() {
             let z: T = StandardNormal.sample(&mut self.rng);
             let d_theta = self.phase_noise_std * z;
-            let jitter_phasor = Complex::new(d_theta.cos(), d_theta.sin());
+            // Fast first-order small-angle approximation e^{j*d} ≈ (1, d) for σ < 0.1 rad.
+            // Magnitude growth is absorbed by the periodic normalization below.
+            let threshold = T::from(0.1).unwrap();
+            let jitter_phasor = if self.phase_noise_std < threshold {
+                Complex::new(T::one(), d_theta)
+            } else {
+                Complex::new(d_theta.cos(), d_theta.sin())
+            };
             self.phasor = self.phasor * jitter_phasor;
         }
 
@@ -433,5 +440,58 @@ mod tests {
             .collect();
 
         assert_eq!(recovered, payload);
+    }
+
+    #[test]
+    fn test_wiener_phase_noise_threshold_boundary() {
+        let mut rng = Xoshiro256PlusPlus::seed_from_u64(0xFACE_CAFE);
+        let unit_symbol = Complex::new(1.0f64, 0.0f64);
+        let num_samples = 50_000;
+
+        // 1. Below threshold (sigma = 0.05 < 0.1) -> exercises small-angle fast path
+        let mut fast_channel = PhaseDistortion::wiener(0.05f64, &mut rng);
+        let mut prev_fast = fast_channel.apply_point(unit_symbol);
+        let mut deltas_fast = Vec::with_capacity(num_samples - 1);
+
+        for _ in 1..num_samples {
+            let curr = fast_channel.apply_point(unit_symbol);
+            let conj_prod = curr * Complex::new(prev_fast.re, -prev_fast.im);
+            deltas_fast.push(conj_prod.im.atan2(conj_prod.re));
+            prev_fast = curr;
+        }
+
+        let mean_fast = deltas_fast.iter().sum::<f64>() / (deltas_fast.len() as f64);
+        let var_fast = deltas_fast
+            .iter()
+            .map(|&d| (d - mean_fast) * (d - mean_fast))
+            .sum::<f64>()
+            / (deltas_fast.len() as f64);
+        let std_fast = var_fast.sqrt();
+
+        assert!(mean_fast.abs() < 0.0015);
+        assert!((std_fast - 0.05).abs() < 0.0015);
+
+        // 2. Above threshold (sigma = 0.25 >= 0.1) -> exercises exact trig fallback
+        let mut exact_channel = PhaseDistortion::wiener(0.25f64, &mut rng);
+        let mut prev_exact = exact_channel.apply_point(unit_symbol);
+        let mut deltas_exact = Vec::with_capacity(num_samples - 1);
+
+        for _ in 1..num_samples {
+            let curr = exact_channel.apply_point(unit_symbol);
+            let conj_prod = curr * Complex::new(prev_exact.re, -prev_exact.im);
+            deltas_exact.push(conj_prod.im.atan2(conj_prod.re));
+            prev_exact = curr;
+        }
+
+        let mean_exact = deltas_exact.iter().sum::<f64>() / (deltas_exact.len() as f64);
+        let var_exact = deltas_exact
+            .iter()
+            .map(|&d| (d - mean_exact) * (d - mean_exact))
+            .sum::<f64>()
+            / (deltas_exact.len() as f64);
+        let std_exact = var_exact.sqrt();
+
+        assert!(mean_exact.abs() < 0.005);
+        assert!((std_exact - 0.25).abs() < 0.005);
     }
 }

@@ -1,9 +1,11 @@
 //! Streaming digital demodulation pipelines.
+use crate::RotatedPsk;
+use crate::StandardPsk;
 use crate::bits::{BitOrder, BitPacker, DirectBitCodec, MsbFirst};
 use crate::constellation::{Constellation, ConstellationGeometry, General, Normalized, SquareQam};
 use core::marker::PhantomData;
 use num_complex::Complex;
-
+use num_traits::Float;
 pub trait DemodPoint<T> {
     fn demod_hard(&self, point: Complex<T>) -> usize;
 }
@@ -11,6 +13,50 @@ pub trait DemodPoint<T> {
 pub trait SoftDemodPoint<T, const K: usize, O: BitOrder> {
     fn demod_soft(&self, point: Complex<T>, noise_var: T) -> [T; K];
 }
+
+// Implement SoftDemodPoint across all geometries for f32 and f64
+macro_rules! impl_soft_demod_point {
+    ($ty:ident) => {
+        impl<const M: usize, const K: usize, O: BitOrder> SoftDemodPoint<$ty, K, O>
+            for Constellation<$ty, M, Normalized, General>
+        {
+            #[inline(always)]
+            fn demod_soft(&self, point: Complex<$ty>, inv_noise_var: $ty) -> [$ty; K] {
+                self.demodulate_soft_point_scaled::<K, O>(point, inv_noise_var)
+            }
+        }
+
+        impl<const M: usize, const K: usize, O: BitOrder> SoftDemodPoint<$ty, K, O>
+            for Constellation<$ty, M, Normalized, StandardPsk>
+        {
+            #[inline(always)]
+            fn demod_soft(&self, point: Complex<$ty>, inv_noise_var: $ty) -> [$ty; K] {
+                self.demodulate_soft_point_scaled::<K, O>(point, inv_noise_var)
+            }
+        }
+
+        impl<const M: usize, const K: usize, O: BitOrder> SoftDemodPoint<$ty, K, O>
+            for Constellation<$ty, M, Normalized, RotatedPsk<$ty>>
+        {
+            #[inline(always)]
+            fn demod_soft(&self, point: Complex<$ty>, inv_noise_var: $ty) -> [$ty; K] {
+                self.demodulate_soft_point_scaled::<K, O>(point, inv_noise_var)
+            }
+        }
+
+        impl<const M: usize, const K: usize, O: BitOrder> SoftDemodPoint<$ty, K, O>
+            for Constellation<$ty, M, Normalized, SquareQam<$ty>>
+        {
+            #[inline(always)]
+            fn demod_soft(&self, point: Complex<$ty>, inv_noise_var: $ty) -> [$ty; K] {
+                self.demodulate_soft_point_scaled::<K, O>(point, inv_noise_var)
+            }
+        }
+    };
+}
+
+impl_soft_demod_point!(f32);
+impl_soft_demod_point!(f64);
 
 impl<const M: usize> DemodPoint<f32> for Constellation<f32, M, Normalized, General> {
     #[inline(always)]
@@ -76,24 +122,6 @@ impl<const M: usize> DemodPoint<f64>
     }
 }
 
-impl<const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder >
-    SoftDemodPoint<f32, K, O> for Constellation<f32, M, Normalized, G>
-{
-    #[inline(always)]
-    fn demod_soft(&self, point: Complex<f32>, noise_var: f32) -> [f32; K] {
-        self.demodulate_soft_point::<K, O>(point, noise_var)
-    }
-}
-
-impl<const M: usize, const K: usize, G: ConstellationGeometry, O: BitOrder >
-    SoftDemodPoint<f64, K, O> for Constellation<f64, M, Normalized, G>
-{
-    #[inline(always)]
-    fn demod_soft(&self, point: Complex<f64>, noise_var: f64) -> [f64; K] {
-        self.demodulate_soft_point::<K, O>(point, noise_var)
-    }
-}
-
 pub trait Demodulatable<I, T, O = MsbFirst>
 where
     I: Iterator<Item = Complex<T>>,
@@ -111,7 +139,7 @@ where
 pub trait SoftDemodulatable<I, T, const K: usize, O = MsbFirst>
 where
     I: Iterator<Item = Complex<T>>,
-    O: BitOrder ,
+    O: BitOrder,
     T: Copy + Default,
 {
     type SoftSymbolOutput: Iterator<Item = [T; K]>;
@@ -158,7 +186,7 @@ macro_rules! impl_direct_demod_sizes {
             }
 
             // --- Inherent Soft Demodulation Methods ---
-            impl<T: Copy + Default, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
+            impl<T: Copy + Default + Float, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
                 #[inline]
                 pub fn demodulate_soft<'c, I: Iterator<Item = Complex<T>>>(
                     &'c self,
@@ -242,7 +270,7 @@ macro_rules! impl_direct_demod_sizes {
                 I: Iterator<Item = Complex<T>>,
                 G: ConstellationGeometry,
                 O: BitOrder + 'static,
-                T: Copy + Default,
+                T: Copy + Default + Float,
                 Constellation<T, $m, Normalized, G>: SoftDemodPoint<T, $k, O>,
             {
                 type SoftSymbolOutput = SoftSymbolDemodIter<'c, I, T, $m, $k, G, O>;
@@ -306,7 +334,7 @@ macro_rules! impl_fallback_demod_sizes {
             }
 
             // --- Inherent Soft Demodulation Methods ---
-            impl<T: Copy + Default, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
+            impl<T: Copy + Default + Float, G: ConstellationGeometry> Constellation<T, $m, Normalized, G> {
                 #[inline]
                 pub fn demodulate_soft<'c, I: Iterator<Item = Complex<T>>>(
                     &'c self,
@@ -390,8 +418,9 @@ macro_rules! impl_fallback_demod_sizes {
                 I: Iterator<Item = Complex<T>>,
                 G: ConstellationGeometry,
                 O: BitOrder + 'static,
-                T: Copy + Default,
+                T: Copy + Default + Float,
                 Constellation<T, $m, Normalized, G>: SoftDemodPoint<T, $k, O>,
+            T: Float
             {
                 type SoftSymbolOutput = SoftSymbolDemodIter<'c, I, T, $m, $k, G, O>;
                 type SoftBitOutput = SoftBitDemodIter<'c, I, T, $m, $k, G, O>;
@@ -636,7 +665,7 @@ where
 {
     iter: I,
     constellation: &'c Constellation<T, M, Normalized, G>,
-    noise_var: T,
+    inv_noise_var: T,
     _marker: PhantomData<O>,
 }
 
@@ -644,7 +673,7 @@ impl<'c, I, T, const M: usize, const K: usize, G: ConstellationGeometry>
     SoftSymbolDemodIter<'c, I, T, M, K, G, MsbFirst>
 where
     I: Iterator<Item = Complex<T>>,
-    T: Copy,
+    T: Copy + Float,
 {
     #[inline]
     pub fn new(
@@ -660,7 +689,7 @@ impl<'c, I, T, const M: usize, const K: usize, G: ConstellationGeometry, O: BitO
     SoftSymbolDemodIter<'c, I, T, M, K, G, O>
 where
     I: Iterator<Item = Complex<T>>,
-    T: Copy,
+    T: Copy + Float,
 {
     #[inline]
     pub fn with_order(
@@ -677,7 +706,7 @@ where
         Self {
             iter,
             constellation,
-            noise_var,
+            inv_noise_var: T::one() / noise_var,
             _marker: PhantomData,
         }
     }
@@ -687,7 +716,7 @@ impl<'c, I, T, const M: usize, const K: usize, G, O> Iterator
     for SoftSymbolDemodIter<'c, I, T, M, K, G, O>
 where
     I: Iterator<Item = Complex<T>>,
-    T: Copy,
+    T: Copy + Float,
     G: ConstellationGeometry,
     O: BitOrder + 'static,
     Constellation<T, M, Normalized, G>: SoftDemodPoint<T, K, O>,
@@ -697,7 +726,7 @@ where
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let point = self.iter.next()?;
-        Some(self.constellation.demod_soft(point, self.noise_var))
+        Some(self.constellation.demod_soft(point, self.inv_noise_var))
     }
 
     #[inline]
@@ -710,7 +739,7 @@ impl<'c, I, T, const M: usize, const K: usize, G, O> ExactSizeIterator
     for SoftSymbolDemodIter<'c, I, T, M, K, G, O>
 where
     I: ExactSizeIterator<Item = Complex<T>>,
-    T: Copy,
+    T: Copy + Float,
     G: ConstellationGeometry,
     O: BitOrder + 'static,
     Constellation<T, M, Normalized, G>: SoftDemodPoint<T, K, O>,
@@ -730,7 +759,7 @@ impl<'c, I, T, const M: usize, const K: usize, G: ConstellationGeometry>
     SoftBitDemodIter<'c, I, T, M, K, G, MsbFirst>
 where
     I: Iterator<Item = Complex<T>>,
-    T: Copy + Default,
+    T: Copy + Default + Float,
 {
     #[inline]
     pub fn new(
@@ -746,7 +775,7 @@ impl<'c, I, T, const M: usize, const K: usize, G: ConstellationGeometry, O: BitO
     SoftBitDemodIter<'c, I, T, M, K, G, O>
 where
     I: Iterator<Item = Complex<T>>,
-    T: Copy + Default,
+    T: Copy + Default + Float,
 {
     #[inline]
     pub fn with_order(
@@ -766,7 +795,7 @@ impl<'c, I, T, const M: usize, const K: usize, G, O> Iterator
     for SoftBitDemodIter<'c, I, T, M, K, G, O>
 where
     I: Iterator<Item = Complex<T>>,
-    T: Copy + Default,
+    T: Copy + Default + Float,
     G: ConstellationGeometry,
     O: BitOrder + 'static,
     Constellation<T, M, Normalized, G>: SoftDemodPoint<T, K, O>,
@@ -802,7 +831,7 @@ impl<'c, I, T, const M: usize, const K: usize, G, O> ExactSizeIterator
     for SoftBitDemodIter<'c, I, T, M, K, G, O>
 where
     I: ExactSizeIterator<Item = Complex<T>>,
-    T: Copy + Default,
+    T: Copy + Default + Float,
     G: ConstellationGeometry,
     O: BitOrder + 'static,
     Constellation<T, M, Normalized, G>: SoftDemodPoint<T, K, O>,
