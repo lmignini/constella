@@ -41,6 +41,8 @@ rand_xoshiro = { version = "0.8.*", default-features = false }
 cpal = "0.15"
 ringbuf = "0.4"
 
+libm = "0.2.*"
+
 [[bench]]
 name = "modem_throughput"
 harness = false
