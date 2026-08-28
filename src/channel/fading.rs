@@ -354,6 +354,16 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
+
+    #[inline]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut channel = self.channel;
+        self.iter
+            .fold(init, |acc, point| f(acc, channel.apply_point(point)))
+    }
 }
 
 impl<I, T, R, M, C> ExactSizeIterator for FadingIter<I, T, R, M, C>
@@ -399,6 +409,17 @@ where
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
+    }
+
+    #[inline]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut channel = self.channel;
+        self.iter.fold(init, |acc, point| {
+            f(acc, channel.apply_point_with_csi(point))
+        })
     }
 }
 
@@ -481,6 +502,16 @@ where
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
+    }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let policy = self.policy;
+        self.iter
+            .fold(init, |acc, faded| f(acc, policy.equalize(faded)))
     }
 }
 

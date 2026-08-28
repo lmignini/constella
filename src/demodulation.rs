@@ -584,6 +584,16 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let c = self.constellation;
+        self.iter
+            .fold(init, |acc, point| f(acc, c.demod_hard(point)))
+    }
 }
 
 impl<'c, I, T, const M: usize, G> ExactSizeIterator for HardSymbolDemodIter<'c, I, T, M, G>
@@ -656,6 +666,14 @@ where
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.packer.size_hint()
+    }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        self.packer.fold(init, f)
     }
 }
 
@@ -732,6 +750,17 @@ where
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
+    }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let c = self.constellation;
+        let inv_n0 = self.inv_noise_var;
+        self.iter
+            .fold(init, |acc, point| f(acc, c.demod_soft(point, inv_n0)))
     }
 }
 
@@ -824,6 +853,27 @@ where
         let upper_total = upper.and_then(|u| u.checked_mul(K)?.checked_add(buffered));
 
         (lower_total, upper_total)
+    }
+
+    #[inline]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut acc = init;
+        while self.index < K {
+            acc = f(acc, self.buffer[self.index]);
+            self.index += 1;
+        }
+
+        self.symbol_iter.fold(acc, |mut acc, llrs| {
+            let mut j = 0;
+            while j < K {
+                acc = f(acc, llrs[j]);
+                j += 1;
+            }
+            acc
+        })
     }
 }
 
@@ -918,6 +968,30 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         let (lower, upper) = self.iter.size_hint();
         (lower / N, upper.map(|u| u / N))
+    }
+
+    #[inline]
+    fn fold<B, F>(mut self, mut acc: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let c = self.constellation;
+        let mut symbols = [0usize; N];
+
+        'outer: loop {
+            let mut i = 0;
+            while i < N {
+                match self.iter.next() {
+                    Some(pt) => {
+                        symbols[i] = c.demod_hard(pt);
+                        i += 1;
+                    }
+                    None => break 'outer,
+                }
+            }
+            acc = f(acc, O::pack_symbols(symbols));
+        }
+        acc
     }
 }
 

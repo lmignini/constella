@@ -189,6 +189,17 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut channel = self.channel;
+        self.iter.fold(init, |acc, item| {
+            f(acc, item.map_sample(|pt| channel.apply_point(pt)))
+        })
+    }
 }
 
 impl<I, T, R> ExactSizeIterator for AwgnIter<I, T, R>

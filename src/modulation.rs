@@ -212,12 +212,22 @@ where
     #[inline]
     fn next(&mut self) -> Option<Self::Item> {
         let symbol_index = self.bit_chunker.next()?;
-        Some(self.constellation[symbol_index & (M - 1)])   // M is a power of two by construction
+        Some(self.constellation[symbol_index & (M - 1)]) // M is a power of two by construction
     }
 
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.bit_chunker.size_hint()
+    }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let c = self.constellation;
+        self.bit_chunker
+            .fold(init, |acc, idx| f(acc, c[idx & (M - 1)]))
     }
 }
 
@@ -319,6 +329,29 @@ where
         let upper_total = upper.and_then(|u| u.checked_mul(N)?.checked_add(buffered));
 
         (lower_total, upper_total)
+    }
+
+    #[inline]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut acc = init;
+        while (self.index as usize) < N {
+            acc = f(acc, self.buffer[self.index as usize]);
+            self.index += 1;
+        }
+
+        let c = self.constellation;
+        self.iter.fold(acc, |mut acc, byte| {
+            let indices = O::unpack_byte(byte);
+            let mut i = 0;
+            while i < N {
+                acc = f(acc, c[indices[i] & (M - 1)]);
+                i += 1;
+            }
+            acc
+        })
     }
 }
 

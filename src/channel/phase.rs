@@ -171,6 +171,17 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
+
+    #[inline]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut distortion = self.distortion;
+        self.iter.fold(init, |acc, item| {
+            f(acc, item.map_sample(|pt| distortion.apply_point(pt)))
+        })
+    }
 }
 
 impl<I, T, R> ExactSizeIterator for PhaseDistortionIter<I, T, R>

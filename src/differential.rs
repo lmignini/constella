@@ -83,6 +83,29 @@ where
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
     }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut state = self.state;
+        let mut sample_count = self.sample_count;
+
+        self.iter.fold(init, |acc, x_k| {
+            let y_k = state * x_k;
+            state = y_k;
+
+            sample_count = sample_count.wrapping_add(1);
+            if sample_count & 0x3FF == 0 {
+                let norm = (state.re * state.re + state.im * state.im).sqrt();
+                state.re = state.re / norm;
+                state.im = state.im / norm;
+            }
+
+            f(acc, y_k)
+        })
+    }
 }
 
 impl<I, T> ExactSizeIterator for DifferentialEncoderIter<I, T>
@@ -147,6 +170,19 @@ where
     #[inline]
     fn size_hint(&self) -> (usize, Option<usize>) {
         self.iter.size_hint()
+    }
+
+    #[inline]
+    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut prev_sample = self.prev_sample;
+        self.iter.fold(init, |acc, r_k| {
+            let z_k = r_k * prev_sample.conj();
+            prev_sample = r_k;
+            f(acc, z_k)
+        })
     }
 }
 

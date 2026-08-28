@@ -385,6 +385,35 @@ where
 
         (lower_symbols, upper_symbols)
     }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut acc = init;
+        let mut bit_buffer = self.bit_buffer;
+        let mut bits_in_buffer = self.bits_in_buffer;
+
+        while bits_in_buffer >= K as u8 {
+            let chunk = O::extract_chunk::<K>(&mut bit_buffer, &mut bits_in_buffer);
+            acc = f(acc, chunk);
+        }
+
+        acc = self.iter.fold(acc, |mut acc, byte| {
+            O::push_byte(&mut bit_buffer, &mut bits_in_buffer, byte);
+            while bits_in_buffer >= K as u8 {
+                let chunk = O::extract_chunk::<K>(&mut bit_buffer, &mut bits_in_buffer);
+                acc = f(acc, chunk);
+            }
+            acc
+        });
+
+        if let Some(final_chunk) = P::finalize::<K, O>(&mut bit_buffer, &mut bits_in_buffer) {
+            acc = f(acc, final_chunk);
+        }
+        acc
+    }
 }
 
 pub struct BitPacker<I, const K: usize, O = MsbFirst> {
@@ -462,6 +491,30 @@ where
         });
 
         (lower_bytes, upper_bytes)
+    }
+
+    #[inline]
+    fn fold<B, F>(self, init: B, mut f: F) -> B
+    where
+        F: FnMut(B, Self::Item) -> B,
+    {
+        let mut acc = init;
+        let mut bit_buffer = self.bit_buffer;
+        let mut bits_in_buffer = self.bits_in_buffer;
+
+        while bits_in_buffer >= 8 {
+            let byte = O::extract_byte(&mut bit_buffer, &mut bits_in_buffer);
+            acc = f(acc, byte);
+        }
+
+        self.iter.fold(acc, |mut acc, chunk| {
+            O::push_chunk::<K>(&mut bit_buffer, &mut bits_in_buffer, chunk);
+            while bits_in_buffer >= 8 {
+                let byte = O::extract_byte(&mut bit_buffer, &mut bits_in_buffer);
+                acc = f(acc, byte);
+            }
+            acc
+        })
     }
 }
 

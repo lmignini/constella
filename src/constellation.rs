@@ -264,12 +264,11 @@ macro_rules! impl_constellation_float {
 
                 let slice_axis = |val: $ty| -> usize {
                     let w = val * self.geometry.scale + self.geometry.offset;
-                    if w <= 0.0 {
-                        0
-                    } else {
-                        let idx = w as usize;
-                        if idx >= l { l - 1 } else { idx }
-                    }
+                    let hi = (l - 1) as $ty;
+                    // Low-bound comparison maps NaN and negative coordinates to 0.0
+                    let w = if w > 0.0 { w } else { 0.0 };
+                    let w = if w < hi { w } else { hi };
+                    w as usize
                 };
 
                 let i = slice_axis(point.re);
@@ -873,6 +872,34 @@ mod tests {
                 assert!((fast_lsb[0] - slow_lsb[0]).abs() < 1e-12);
                 assert!((fast_lsb[1] - slow_lsb[1]).abs() < 1e-12);
             }
+        }
+    }
+
+    #[test]
+    fn test_qam_slicer_clamping_and_nan_handling() {
+        let qam16 = Qam16::<f32>::QAM16;
+        let qam256 = Qam256::<f64>::QAM256;
+
+        // 1. Extreme outliers (far beyond outer decision boundaries)
+        let far_pos = Complex::new(1000.0f32, 1000.0f32);
+        let far_neg = Complex::new(-1000.0f32, -1000.0f32);
+
+        let idx_pos = qam16.demodulate_hard_point(far_pos);
+        let idx_neg = qam16.demodulate_hard_point(far_neg);
+
+        assert!(idx_pos < 16);
+        assert!(idx_neg < 16);
+
+        // 2. NaN coordinates should resolve without panic
+        let nan_point = Complex::new(f32::NAN, f32::NAN);
+        let idx_nan = qam16.demodulate_hard_point(nan_point);
+        assert_eq!(idx_nan, 0);
+
+        // 3. Exact grid boundary tests across 256-QAM
+        for idx in 0..256 {
+            let pt = qam256[idx];
+            let recovered = qam256.demodulate_hard_point(pt);
+            assert_eq!(recovered, idx, "Mismatch on 256-QAM symbol {idx}");
         }
     }
 }
