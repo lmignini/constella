@@ -173,7 +173,7 @@ where
     }
 
     #[inline]
-    fn fold<B, F>(mut self, init: B, mut f: F) -> B
+    fn fold<B, F>(self, init: B, mut f: F) -> B
     where
         F: FnMut(B, Self::Item) -> B,
     {
@@ -246,6 +246,7 @@ mod tests {
     /// In an ideal back-to-back loopback test:
     /// - The encoder starts accumulating from the default reference: y_0 = 1 + 0j.
     /// - The decoder starts demodulating from the default reference: r_0 = 1 + 0j.
+    /// 
     /// Because no channel rotation is applied, the initial states match perfectly and
     /// the full payload recovers error-free.
     #[test]
@@ -312,7 +313,9 @@ mod tests {
     /// 3. When the decoder processes r_0, it outputs a dummy metric against its default
     ///    unrotated state (1 + 0j) and updates its internal memory to r_0 = e^{jθ}.
     /// 4. When the first true data symbol r_1 = y_1 * e^{jθ} arrives, the decoder calculates:
-    ///       z_1 = r_1 * conj(r_0) = (y_1 * e^{jθ}) * conj(e^{jθ}) = y_1
+    /// 
+    /// z_1 = r_1 * conj(r_0) = (y_1 * e^{jθ}) * conj(e^{jθ}) = y_1
+    /// 
     ///    The unknown channel angle θ cancels out completely.
     /// 5. Calling `.skip(1)` drops the dummy metric z_0, leaving only valid payload symbols.
     #[test]
